@@ -219,6 +219,8 @@ export default function Tracking() {
     try {
       const count = await store.mergeOrders(newOrders)
       alert(`成功导入 ${count} 条履约单`)
+      setCountryFilter('')
+      setPage(1)
     } catch (err: any) {
       alert(`导入失败: ${err?.message || '未知错误'}`)
     }

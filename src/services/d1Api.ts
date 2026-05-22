@@ -213,13 +213,17 @@ export async function fetchOrdersFromD1(params: FetchOrdersParams = {}): Promise
 
 export async function upsertOrdersToD1(orders: LogisticsOrder[]): Promise<number> {
   const rows = orders.map(orderToRow)
-  const res = await fetch(API_BASE, {
+  const res = await fetch(`${API_BASE}/import`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orders: rows }),
   })
   const data = await res.json()
-  if (!data.success) throw new Error(data.error || 'Failed to upsert orders')
+  if (!data.success) {
+    const errMsg = data.error || 'Failed to upsert orders'
+    const detail = data.errors?.length ? ` (${data.errors.slice(0, 3).join('; ')})` : ''
+    throw new Error(errMsg + detail)
+  }
   return data.upserted || 0
 }
 
