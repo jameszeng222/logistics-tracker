@@ -12,6 +12,8 @@ import {
 } from '@/config/monitoringConfig'
 import type { MonitoringRule } from '@/config/monitoringConfig'
 import { loadProviders, loadChannels, getChannelsForProvider } from '@/config/carrierConfig'
+import { loadStatusKeywordRules, saveStatusKeywordRules, DEFAULT_STATUS_KEYWORD_RULES, STATUS_KEYS } from '@/config/statusKeywords'
+import type { StatusKeywordRule } from '@/config/statusKeywords'
 import { COUNTRY_NAMES, getCountryName } from '@/utils/countryNames'
 import { STATUS_LABELS } from '@/types'
 import type { OrderStatus, LogisticsOrder } from '@/types'
@@ -65,12 +67,43 @@ function getOrderTime(order: AlertItem['order'], field: TimeField): string {
   return order.erpInfo?.shippedAt || order.shipDate || ''
 }
 
+function KeywordInput({ onAdd }: { onAdd: (value: string) => void }) {
+  const [value, setValue] = useState('')
+  return (
+    <div className="inline-flex items-center gap-1">
+      <input
+        type="text"
+        className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-100 outline-none w-28"
+        placeholder="添加关键字"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            onAdd(value)
+            setValue('')
+          }
+        }}
+      />
+      <button
+        className="p-1 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+        onClick={() => {
+          onAdd(value)
+          setValue('')
+        }}
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  )
+}
+
 export default function FulfillmentMonitor() {
   const store = useLogisticsStore()
   const allOrders = useMemo(() => store.getFilteredOrders(), [store.orders, store.filters])
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'rules'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'keywords'>('overview')
   const [rules, setRules] = useState<MonitoringRule[]>([])
+  const [keywordRules, setKeywordRules] = useState<StatusKeywordRule[]>(loadStatusKeywordRules())
   const [carrierFilter, setCarrierFilter] = useState('')
   const [countryFilter, setCountryFilter] = useState('US')
   const [timeField, setTimeField] = useState<TimeField>('shippedAt')
@@ -242,7 +275,20 @@ export default function FulfillmentMonitor() {
         >
           <span className="inline-flex items-center gap-1.5">
             <FileWarning className="w-4 h-4" />
-            规则配置
+            监控规则
+          </span>
+        </button>
+        <button
+          className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'keywords'
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+          onClick={() => setActiveTab('keywords')}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Search className="w-4 h-4" />
+            状态关键字
           </span>
         </button>
       </div>
@@ -719,6 +765,181 @@ export default function FulfillmentMonitor() {
               <Save className="w-3.5 h-3.5" />
               保存
             </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'keywords' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                <Search className="w-4 h-4 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800">状态关键字说明</h3>
+                <p className="text-[11px] text-slate-400">系统通过关键字匹配物流轨迹事件来判断包裹状态</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 grid grid-cols-2 gap-3">
+              {STATUS_KEYS.map((sk) => {
+                const colorMap: Record<string, string> = {
+                  online: 'bg-blue-50 text-blue-600',
+                  customs_in: 'bg-orange-50 text-orange-600',
+                  customs_out: 'bg-green-50 text-green-600',
+                  delivery: 'bg-purple-50 text-purple-600',
+                  delivered: 'bg-green-50 text-green-600',
+                  returning: 'bg-red-50 text-red-600',
+                }
+                return (
+                  <div key={sk.key} className="flex items-center gap-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${colorMap[sk.key] || 'bg-slate-50 text-slate-600'}`}>
+                      {sk.label}
+                    </span>
+                    <span className="text-xs text-slate-500">{sk.description}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                <Search className="w-4 h-4 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800">状态关键字规则</h3>
+                <p className="text-[11px] text-slate-400">{keywordRules.length} 条规则，{keywordRules.filter((r) => r.enabled).length} 条已启用</p>
+              </div>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {keywordRules.map((rule) => (
+                <div key={rule.id} className="px-5 py-4 hover:bg-slate-50/30 transition-colors">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 space-y-3">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <input
+                          type="text"
+                          className="text-sm font-medium text-slate-900 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-100 outline-none w-36"
+                          value={rule.name}
+                          onChange={(e) =>
+                            setKeywordRules((prev) =>
+                              prev.map((r) => (r.id === rule.id ? { ...r, name: e.target.value } : r))
+                            )
+                          }
+                        />
+                        <select
+                          className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-100 outline-none"
+                          value={rule.statusKey}
+                          onChange={(e) =>
+                            setKeywordRules((prev) =>
+                              prev.map((r) => (r.id === rule.id ? { ...r, statusKey: e.target.value } : r))
+                            )
+                          }
+                        >
+                          {STATUS_KEYS.map((sk) => (
+                            <option key={sk.key} value={sk.key}>{sk.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {rule.keywords.map((kw, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 rounded-lg px-2 py-0.5 text-xs"
+                          >
+                            {kw}
+                            <button
+                              className="hover:text-blue-800 transition-colors"
+                              onClick={() =>
+                                setKeywordRules((prev) =>
+                                  prev.map((r) =>
+                                    r.id === rule.id
+                                      ? { ...r, keywords: r.keywords.filter((_, i) => i !== idx) }
+                                      : r
+                                  )
+                                )
+                              }
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                        <KeywordInput
+                          onAdd={(kw) => {
+                            if (!kw.trim()) return
+                            setKeywordRules((prev) =>
+                              prev.map((r) =>
+                                r.id === rule.id && !r.keywords.includes(kw.trim())
+                                  ? { ...r, keywords: [...r.keywords, kw.trim()] }
+                                  : r
+                              )
+                            )
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        className="text-slate-400 hover:text-slate-600 transition-colors"
+                        onClick={() =>
+                          setKeywordRules((prev) =>
+                            prev.map((r) => (r.id === rule.id ? { ...r, enabled: !r.enabled } : r))
+                          )
+                        }
+                      >
+                        {rule.enabled ? (
+                          <ToggleRight className="w-7 h-7 text-blue-500" />
+                        ) : (
+                          <ToggleLeft className="w-7 h-7 text-slate-300" />
+                        )}
+                      </button>
+                      <button
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        onClick={() => setKeywordRules((prev) => prev.filter((r) => r.id !== rule.id))}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-100 flex items-center gap-3">
+              <button
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
+                onClick={() => {
+                  const newRule: StatusKeywordRule = {
+                    id: `skr_${Date.now()}`,
+                    name: '新规则',
+                    statusKey: 'online',
+                    keywords: [],
+                    enabled: true,
+                  }
+                  setKeywordRules((prev) => [...prev, newRule])
+                }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                添加规则
+              </button>
+              <button
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 transition-colors"
+                onClick={() => setKeywordRules([...DEFAULT_STATUS_KEYWORD_RULES])}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                恢复默认
+              </button>
+              <button
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm"
+                onClick={() => saveStatusKeywordRules(keywordRules)}
+              >
+                <Save className="w-3.5 h-3.5" />
+                保存
+              </button>
+            </div>
           </div>
         </div>
       )}

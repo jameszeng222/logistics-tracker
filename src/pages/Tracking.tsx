@@ -10,6 +10,8 @@ import { useLogisticsStore } from '@/store/logisticsStore'
 import { CARRIERS, STATUS_LABELS, STATUS_COLORS, EXCEPTION_SUBTYPE_LABELS, EXCEPTION_CATEGORY_LABELS } from '@/types'
 import type { OrderStatus, LogisticsOrder } from '@/types'
 import { matchSlaRule } from '@/config/slaConfig'
+import type { SlaTimeBase } from '@/config/slaConfig'
+import { getOnlineTime } from '@/config/statusKeywords'
 import StatusBadge from '@/components/StatusBadge'
 import TrackingTimeline from '@/components/TrackingTimeline'
 
@@ -34,11 +36,27 @@ function getOrderTime(order: LogisticsOrder, field: TimeField): string {
 }
 
 /* ========== 计算实际时效（天） ========== */
-function getActualDays(order: LogisticsOrder): number | null {
-  const shipDate = order.erpInfo?.shippedAt || order.shipDate
+function getActualDaysByBase(order: LogisticsOrder, timeBase: SlaTimeBase): number | null {
   const deliveryDate = order.deliveryDate || (order.status === 'delivered' ? order.events?.[0]?.timestamp : null)
-  if (!shipDate || !deliveryDate) return null
-  return Math.round((new Date(deliveryDate).getTime() - new Date(shipDate).getTime()) / (1000 * 60 * 60 * 24) * 10) / 10
+  if (!deliveryDate) return null
+
+  let startTime: string | null = null
+  if (timeBase === 'created_to_delivered') {
+    startTime = order.erpInfo?.createdAt || ''
+  } else if (timeBase === 'shipped_to_delivered') {
+    startTime = order.erpInfo?.shippedAt || order.shipDate || ''
+  } else if (timeBase === 'online_to_delivered') {
+    startTime = getOnlineTime(order.events)
+  }
+
+  if (!startTime) return null
+  return Math.round((new Date(deliveryDate).getTime() - new Date(startTime).getTime()) / (1000 * 60 * 60 * 24) * 10) / 10
+}
+
+function getActualDays(order: LogisticsOrder): number | null {
+  const matched = matchSlaRule(order.destinationCountry, order.carrier)
+  const timeBase = matched?.timeBase || 'shipped_to_delivered'
+  return getActualDaysByBase(order, timeBase)
 }
 
 /* ========== 获取达标时效天数 ========== */
@@ -486,7 +504,9 @@ export default function Tracking() {
                       <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.currentChannel || '-'}</td>
                       <td className="px-5 py-3.5">
                         {actual !== null ? (
-                          <span className={`font-medium ${isSlaOk ? 'text-emerald-500' : 'text-red-500'}`}>{actual}天</span>
+                          <span className={`font-medium ${isSlaOk ? 'text-emerald-500' : 'text-red-500'}`} title={`创建→签收: ${getActualDaysByBase(o, 'created_to_delivered') ?? '-'}天 | 出库→签收: ${getActualDaysByBase(o, 'shipped_to_delivered') ?? '-'}天 | 上网→签收: ${getActualDaysByBase(o, 'online_to_delivered') ?? '-'}天`}>
+                            {actual}天
+                          </span>
                         ) : (
                           <span className="text-slate-300">-</span>
                         )}

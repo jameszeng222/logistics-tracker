@@ -10,7 +10,6 @@ import DataSourceSettings from '@/pages/settings/DataSourceSettings'
 import CarrierSettings from '@/pages/settings/CarrierSettings'
 import SlaSettings from '@/pages/settings/SlaSettings'
 import OtherSettings from '@/pages/settings/OtherSettings'
-import StatusKeywordSettings from '@/pages/settings/StatusKeywordSettings'
 
 export default function App() {
   return (
@@ -27,7 +26,7 @@ export default function App() {
           <Route path="/settings/carriers" element={<CarrierSettings />} />
           <Route path="/settings/sla" element={<SlaSettings />} />
           <Route path="/settings/other" element={<OtherSettings />} />
-          <Route path="/settings/status-keywords" element={<StatusKeywordSettings />} />
+
         </Route>
       </Routes>
     </Router>

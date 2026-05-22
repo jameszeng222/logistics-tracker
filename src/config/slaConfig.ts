@@ -1,5 +1,7 @@
 import { loadProviders, loadChannels } from '@/config/carrierConfig'
 
+export type SlaTimeBase = 'created_to_delivered' | 'shipped_to_delivered' | 'online_to_delivered'
+
 export interface SlaRule {
   id: string
   name: string
@@ -7,8 +9,15 @@ export interface SlaRule {
   primaryCarrierId: string
   secondaryChannelId: string
   slaDays: number
+  timeBase: SlaTimeBase
   enabled: boolean
 }
+
+export const TIME_BASE_OPTIONS: { value: SlaTimeBase; label: string; description: string }[] = [
+  { value: 'created_to_delivered', label: '创建→签收', description: '从订单创建到签收的总时效' },
+  { value: 'shipped_to_delivered', label: '出库→签收', description: '从出库到签收的物流时效' },
+  { value: 'online_to_delivered', label: '上网→签收', description: '从揽收上网到签收的运输时效' },
+]
 
 export const DESTINATION_REGIONS = [
   { value: 'southeast_asia', label: '东南亚' },
@@ -49,29 +58,29 @@ export const DESTINATION_REGION_MAP: Record<string, string> = {
 }
 
 export const DEFAULT_SLA_RULES: SlaRule[] = [
-  { id: 'r1', name: '东南亚标准', country: 'VN', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, enabled: true },
-  { id: 'r1b', name: '泰国标准', country: 'TH', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, enabled: true },
-  { id: 'r1c', name: '菲律宾标准', country: 'PH', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, enabled: true },
-  { id: 'r1d', name: '马来西亚标准', country: 'MY', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, enabled: true },
-  { id: 'r1e', name: '印尼标准', country: 'ID', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, enabled: true },
-  { id: 'r1f', name: '新加坡标准', country: 'SG', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, enabled: true },
-  { id: 'r2', name: '东亚标准', country: 'JP', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, enabled: true },
-  { id: 'r2b', name: '韩国标准', country: 'KR', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, enabled: true },
-  { id: 'r3', name: '南亚标准', country: 'IN', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 12, enabled: true },
-  { id: 'r4', name: '中东标准', country: 'AE', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, enabled: true },
-  { id: 'r4b', name: '沙特标准', country: 'SA', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, enabled: true },
-  { id: 'r5', name: '英国标准', country: 'GB', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, enabled: true },
-  { id: 'r5b', name: '德国标准', country: 'DE', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, enabled: true },
-  { id: 'r5c', name: '法国标准', country: 'FR', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, enabled: true },
-  { id: 'r6', name: '美国标准', country: 'US', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, enabled: true },
-  { id: 'r6b', name: '加拿大标准', country: 'CA', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, enabled: true },
-  { id: 'r7', name: '巴西标准', country: 'BR', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 25, enabled: true },
-  { id: 'r8', name: '南非标准', country: 'ZA', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 25, enabled: true },
-  { id: 'r9', name: '澳洲标准', country: 'AU', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 12, enabled: true },
-  { id: 'r10', name: '快递渠道全球', country: '*', primaryCarrierId: 'pc_1', secondaryChannelId: '*', slaDays: 5, enabled: true },
-  { id: 'r10b', name: 'FedEx全球', country: '*', primaryCarrierId: 'pc_2', secondaryChannelId: '*', slaDays: 5, enabled: true },
-  { id: 'r10c', name: 'UPS全球', country: '*', primaryCarrierId: 'pc_3', secondaryChannelId: '*', slaDays: 5, enabled: true },
-  { id: 'r11', name: '默认SLA', country: '*', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 20, enabled: true },
+  { id: 'r1', name: '东南亚标准', country: 'VN', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r1b', name: '泰国标准', country: 'TH', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r1c', name: '菲律宾标准', country: 'PH', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r1d', name: '马来西亚标准', country: 'MY', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r1e', name: '印尼标准', country: 'ID', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r1f', name: '新加坡标准', country: 'SG', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r2', name: '东亚标准', country: 'JP', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r2b', name: '韩国标准', country: 'KR', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 7, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r3', name: '南亚标准', country: 'IN', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 12, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r4', name: '中东标准', country: 'AE', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r4b', name: '沙特标准', country: 'SA', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r5', name: '英国标准', country: 'GB', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r5b', name: '德国标准', country: 'DE', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r5c', name: '法国标准', country: 'FR', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r6', name: '美国标准', country: 'US', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r6b', name: '加拿大标准', country: 'CA', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 15, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r7', name: '巴西标准', country: 'BR', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 25, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r8', name: '南非标准', country: 'ZA', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 25, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r9', name: '澳洲标准', country: 'AU', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 12, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r10', name: '快递渠道全球', country: '*', primaryCarrierId: 'pc_1', secondaryChannelId: '*', slaDays: 5, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r10b', name: 'FedEx全球', country: '*', primaryCarrierId: 'pc_2', secondaryChannelId: '*', slaDays: 5, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r10c', name: 'UPS全球', country: '*', primaryCarrierId: 'pc_3', secondaryChannelId: '*', slaDays: 5, timeBase: 'shipped_to_delivered', enabled: true },
+  { id: 'r11', name: '默认SLA', country: '*', primaryCarrierId: '*', secondaryChannelId: '*', slaDays: 20, timeBase: 'shipped_to_delivered', enabled: true },
 ]
 
 const STORAGE_KEY = 'sla_rules'

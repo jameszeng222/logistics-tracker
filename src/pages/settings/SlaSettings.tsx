@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Plus, Trash2, RotateCcw, Save, ToggleLeft, ToggleRight } from 'lucide-react'
 import type { SlaRule } from '@/config/slaConfig'
-import { loadSlaRules, saveSlaRules, DEFAULT_SLA_RULES } from '@/config/slaConfig'
+import { loadSlaRules, saveSlaRules, DEFAULT_SLA_RULES, TIME_BASE_OPTIONS } from '@/config/slaConfig'
 import { loadProviders, loadChannels, getChannelsForProvider } from '@/config/carrierConfig'
 import { COUNTRY_NAMES } from '@/utils/countryNames'
 
@@ -44,6 +44,7 @@ export default function SlaSettings() {
       primaryCarrierId: '*',
       secondaryChannelId: '*',
       slaDays: 15,
+      timeBase: 'shipped_to_delivered',
       enabled: true,
     }
     setRules([...rules, newRule])
@@ -121,6 +122,7 @@ export default function SlaSettings() {
           <span className="text-[11px] text-slate-400 font-medium w-[130px]">一级运输商</span>
           <span className="text-[11px] text-slate-400 font-medium w-[140px]">二级物流渠道</span>
           <span className="text-[11px] text-slate-400 font-medium w-[90px]">SLA 天数</span>
+          <span className="text-[11px] text-slate-400 font-medium w-[130px]">时效基准</span>
           <span className="text-[11px] text-slate-400 font-medium w-16 text-center">状态</span>
           <span className="text-[11px] text-slate-400 font-medium w-10 text-center">操作</span>
         </div>
@@ -237,6 +239,20 @@ export default function SlaSettings() {
                   </div>
                 </div>
 
+                <div className="w-[130px]">
+                  <select
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white"
+                    value={rule.timeBase}
+                    onChange={(e) => updateRule(rule.id, { timeBase: e.target.value as SlaRule['timeBase'] })}
+                  >
+                    {TIME_BASE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value} title={opt.description}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="w-16 text-center">
                   <button
                     className="inline-flex items-center justify-center"
@@ -291,7 +307,9 @@ export default function SlaSettings() {
             <p className="font-medium text-slate-600 mb-1">计算公式</p>
             <ul className="space-y-1 list-disc list-inside">
               <li>妥投率 = 已签收 / (全部 - NotFound)</li>
-              <li>平均时效 = Σ(签收时间 - ERP出库时间) / 已签收数</li>
+              <li>创建→签收 = 签收时间 - 创建时间</li>
+              <li>出库→签收 = 签收时间 - 出库时间</li>
+              <li>上网→签收 = 签收时间 - 上网时间（根据状态关键字配置）</li>
               <li>SLA达标率 = 实际时效 ≤ SLA天数 / 已签收数</li>
               <li>优先级：具体渠道规则应排在通配规则之前</li>
             </ul>
