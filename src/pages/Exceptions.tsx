@@ -633,7 +633,7 @@ export default function Exceptions() {
                       <td className="py-4 px-5 text-slate-600">{o.destinationCountry}</td>
                       <td className="py-4 px-5 text-slate-500">{o.erpInfo?.warehouse || '-'}</td>
                       <td className="py-4 px-5 text-slate-500">{o.erpInfo?.team || '-'}</td>
-                      <td className="py-4 px-5"><StatusBadge status={o.status} /></td>
+                      <td className="py-4 px-5 whitespace-nowrap"><StatusBadge status={o.status} /></td>
                       <td className="py-4 px-5 text-slate-500 max-w-[360px] truncate">
                         {o.exception?.description || lastEvent?.description || '-'}
                       </td>
