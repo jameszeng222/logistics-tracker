@@ -114,6 +114,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
         const syncMeta = typeof o.syncMeta === 'string' ? o.syncMeta : JSON.stringify(o.syncMeta || {})
         const erpInfo = o.erpInfo || {}
         const e = (key: string, flatKey: string) => erpInfo[key] || o[flatKey] || ''
+        const carrierCode = o.carrierCode ?? null
 
         return db.prepare(
           `INSERT INTO orders (id, order_id, tracking_number, carrier, carrier_code, origin, destination, destination_country, status, sub_status, ship_date, delivery_date, actual_days, sla_days, exception_description, erp_order_no, erp_created_at, erp_shipped_at, erp_warehouse, erp_team, erp_warehouse_code, erp_platform, erp_shipping_qty, erp_payment_time, erp_packing_time, erp_checkout_time, erp_logistics_provider, erp_logistics_provider_display, erp_current_channel, sync_meta, events, updated_at)
@@ -151,14 +152,14 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
              events = CASE WHEN excluded.events != '[]' THEN excluded.events ELSE orders.events END,
              updated_at = datetime('now')`
         ).bind(
-          id, o.orderId || id, o.trackingNumber || '', o.carrier || '', o.carrierCode || null,
+          id, o.orderId || id, o.trackingNumber || '', o.carrier || '', carrierCode,
           o.origin || '', o.destination || '', o.destinationCountry || '',
           o.status || 'not_found', o.subStatus || (o.events?.[0]?.subStatus) || '',
-          o.shipDate || '', o.deliveryDate || '', o.actualDays || null, o.slaDays || 20,
+          o.shipDate || '', o.deliveryDate || '', o.actualDays ?? null, o.slaDays || 20,
           o.exception?.description || o.exceptionDescription || '',
           e('orderNo', 'erpOrderNo'), e('createdAt', 'erpCreatedAt'), e('shippedAt', 'erpShippedAt'),
           e('warehouse', 'erpWarehouse'), e('team', 'erpTeam'),
-          e('warehouseCode', 'erpWarehouseCode'), e('platform', 'erpPlatform'), erpInfo.shippingQty || o.erpShippingQty || 0,
+          e('warehouseCode', 'erpWarehouseCode'), e('platform', 'erpPlatform'), erpInfo.shippingQty ?? o.erpShippingQty ?? 0,
           e('paymentTime', 'erpPaymentTime'), e('packingTime', 'erpPackingTime'), e('checkoutTime', 'erpCheckoutTime'),
           e('logisticsProvider', 'erpLogisticsProvider'), e('logisticsProviderDisplayName', 'erpLogisticsProviderDisplay'),
           e('currentChannel', 'erpCurrentChannel'),

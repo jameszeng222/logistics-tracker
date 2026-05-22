@@ -79,20 +79,27 @@ export const useLogisticsStore = create<LogisticsStore>()(
       mergeOrders: async (incoming) => {
         if (incoming.length === 0) return 0
         let totalUpserted = 0
+        let lastError: string | null = null
         for (let i = 0; i < incoming.length; i += UPSERT_BATCH) {
           const batch = incoming.slice(i, i + UPSERT_BATCH)
           try {
             const count = await upsertOrdersToD1(batch)
             totalUpserted += count
-          } catch (err) {
+          } catch (err: any) {
+            lastError = err?.message || String(err)
             console.error(`mergeOrders batch ${i} failed:`, err)
-            try {
-              for (const order of batch) {
+            for (const order of batch) {
+              try {
                 await upsertOrdersToD1([order])
                 totalUpserted += 1
+              } catch (singleErr) {
+                console.error(`mergeOrders single upsert failed:`, singleErr)
               }
-            } catch {}
+            }
           }
+        }
+        if (totalUpserted === 0 && lastError) {
+          throw new Error(`导入失败: ${lastError}`)
         }
         return totalUpserted
       },

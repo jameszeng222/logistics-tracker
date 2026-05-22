@@ -187,7 +187,7 @@ export default function Tracking() {
       destinationCountry: row.destinationCountry || '',
       status: 'not_found' as const,
       shipDate: row.checkoutTime || '',
-      deliveryDate: undefined,
+      deliveryDate: '',
       slaDays: 20,
       actualDays: undefined,
       weight: 0,
@@ -216,7 +216,12 @@ export default function Tracking() {
         syncVersion: 1,
       },
     }))
-    await store.mergeOrders(newOrders)
+    try {
+      const count = await store.mergeOrders(newOrders)
+      alert(`成功导入 ${count} 条履约单`)
+    } catch (err: any) {
+      alert(`导入失败: ${err?.message || '未知错误'}`)
+    }
     setImporterOpen(false)
     setRefreshKey((k) => k + 1)
   }, [store])
