@@ -6,7 +6,7 @@ import { Upload, FileSpreadsheet, X, CheckCircle2, Download } from 'lucide-react
 import { useLogisticsStore } from '@/store/logisticsStore'
 
 export default function DataImporter() {
-  const addOrders = useLogisticsStore((s) => s.addOrders)
+  const mergeOrders = useLogisticsStore((s) => s.mergeOrders)
   const [dragActive, setDragActive] = useState(false)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<{ success: boolean; count: number; errors: string[] } | null>(null)
@@ -57,7 +57,7 @@ export default function DataImporter() {
             })
           } catch { errors.push(`第 ${idx + 2} 行数据解析失败`) }
         })
-        addOrders(orders)
+        mergeOrders(orders)
         setResult({ success: true, count: orders.length, errors })
         setImporting(false)
       }
@@ -70,7 +70,7 @@ export default function DataImporter() {
         reader.readAsArrayBuffer(file)
       } else { setResult({ success: false, count: 0, errors: ['不支持的文件格式'] }); setImporting(false) }
     },
-    [addOrders]
+    [mergeOrders]
   )
 
   const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragActive(false); const file = e.dataTransfer.files[0]; if (file) processFile(file) }, [processFile])

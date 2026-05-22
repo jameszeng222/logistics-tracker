@@ -4,11 +4,17 @@ import { useLogisticsStore } from '@/store/logisticsStore'
 import { getTrackInfo } from '@/services/track17'
 import { convertTrackListToOrders } from '@/utils/trackMapper'
 import { pushErpOrders } from '@/services/erpApi'
+import { getOrderCountFromD1, clearAllOrdersFromD1 } from '@/services/d1Api'
 
 export default function DataSourceSettings() {
   const store = useLogisticsStore()
   const track17Config = store.track17Config
   const { syncProgress } = track17Config
+  const [orderCount, setOrderCount] = useState(0)
+
+  useState(() => {
+    getOrderCountFromD1().then(setOrderCount)
+  })
 
   const [trackInput, setTrackInput] = useState('')
   const [fetching, setFetching] = useState(false)
@@ -126,8 +132,7 @@ export default function DataSourceSettings() {
     setPushing(true)
     setPushResult(null)
     try {
-      await store.syncErpOrders()
-      setPushResult({ success: true, message: 'ERP数据同步成功' })
+      setPushResult({ success: true, message: '请使用履约单导入功能导入ERP数据' })
     } catch (err: any) {
       setPushResult({ success: false, message: err.message })
     }
@@ -400,13 +405,13 @@ Authorization: Bearer <your_secret>
 
         <div className="space-y-4">
           <p className="text-xs text-slate-500">
-            系统中共有 <span className="font-medium text-slate-700">{store.orders.length}</span> 个订单
+            系统中共有 <span className="font-medium text-slate-700">{orderCount}</span> 个订单
           </p>
 
           <button
             className="btn-primary flex items-center gap-2 w-full justify-center"
             onClick={handleSync}
-            disabled={!track17Config.apiKey || track17Config.syncing || store.orders.length === 0}
+            disabled={!track17Config.apiKey || track17Config.syncing || orderCount === 0}
           >
             {track17Config.syncing
               ? <RefreshCw className="w-4 h-4 animate-spin" />

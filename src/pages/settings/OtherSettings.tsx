@@ -1,13 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Trash2, AlertTriangle, Info, Ship } from 'lucide-react'
-import { useLogisticsStore } from '@/store/logisticsStore'
+import { getOrderCountFromD1, clearAllOrdersFromD1 } from '@/services/d1Api'
 
 export default function OtherSettings() {
-  const store = useLogisticsStore()
   const [showConfirm, setShowConfirm] = useState(false)
+  const [orderCount, setOrderCount] = useState(0)
 
-  const handleClearAll = () => {
-    store.setOrders([])
+  useEffect(() => {
+    getOrderCountFromD1().then(setOrderCount)
+  }, [])
+
+  const handleClearAll = async () => {
+    await clearAllOrdersFromD1()
+    setOrderCount(0)
     setShowConfirm(false)
   }
 
@@ -38,14 +43,14 @@ export default function OtherSettings() {
           </div>
 
           <p className="text-xs text-slate-500">
-            当前共有 <span className="font-medium text-slate-700">{store.orders.length}</span> 条订单数据
+            当前共有 <span className="font-medium text-slate-700">{orderCount}</span> 条订单数据
           </p>
 
           {!showConfirm ? (
             <button
               className="btn-secondary flex items-center gap-2 text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300 hover:text-red-600"
               onClick={() => setShowConfirm(true)}
-              disabled={store.orders.length === 0}
+              disabled={orderCount === 0}
             >
               <Trash2 className="w-4 h-4" />
               清空所有数据
@@ -99,7 +104,7 @@ export default function OtherSettings() {
           <div className="border-t border-slate-100 pt-3 space-y-2">
             <div className="flex justify-between text-xs">
               <span className="text-slate-400">版本</span>
-              <span className="text-slate-600 font-mono">1.0.0</span>
+              <span className="text-slate-600 font-mono">2.0.0</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-slate-400">技术栈</span>
@@ -110,8 +115,8 @@ export default function OtherSettings() {
               <span className="text-slate-600">17track API v2.4</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-400">状态管理</span>
-              <span className="text-slate-600">Zustand</span>
+              <span className="text-slate-400">架构</span>
+              <span className="text-slate-600">D1 SQL 服务端聚合</span>
             </div>
           </div>
         </div>

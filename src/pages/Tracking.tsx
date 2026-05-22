@@ -1,21 +1,22 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Search, RotateCcw, Eye, X, ChevronLeft, ChevronRight,
   MapPin, AlertTriangle, Calendar, Truck, RefreshCw, Download,
-  FileDown, ChevronDown, Upload, Copy, ExternalLink,
+  FileDown, Upload, Copy, ExternalLink, Loader2, Plus,
 } from 'lucide-react'
 import FulfillmentImporter, { type ParsedFulfillmentRow } from '@/components/FulfillmentImporter'
 import dayjs from 'dayjs'
 import { useLogisticsStore } from '@/store/logisticsStore'
-import { CARRIERS, STATUS_LABELS, STATUS_COLORS, EXCEPTION_SUBTYPE_LABELS, EXCEPTION_CATEGORY_LABELS } from '@/types'
+import { STATUS_LABELS, EXCEPTION_SUBTYPE_LABELS, EXCEPTION_CATEGORY_LABELS } from '@/types'
 import type { OrderStatus, LogisticsOrder } from '@/types'
 import { matchSlaRule } from '@/config/slaConfig'
 import type { SlaTimeBase } from '@/config/slaConfig'
 import { getOnlineTime } from '@/config/statusKeywords'
 import StatusBadge from '@/components/StatusBadge'
 import TrackingTimeline from '@/components/TrackingTimeline'
+import { fetchOrdersFromD1, fetchFilterOptions } from '@/services/d1Api'
+import type { FilterOptions } from '@/services/d1Api'
 
-/* ========== 时间维度类型 ========== */
 type TimeField = 'createdAt' | 'shippedAt' | 'shipDate'
 
 const TIME_FIELD_OPTIONS: { value: TimeField; label: string }[] = [
@@ -24,18 +25,9 @@ const TIME_FIELD_OPTIONS: { value: TimeField; label: string }[] = [
   { value: 'shipDate', label: '提取时间' },
 ]
 
-/* ========== 每页条数选项 ========== */
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const
-const DEFAULT_PAGE_SIZE = 20
+const DEFAULT_PAGE_SIZE = 50
 
-/* ========== 获取订单指定时间字段的值 ========== */
-function getOrderTime(order: LogisticsOrder, field: TimeField): string {
-  if (field === 'createdAt') return order.erpInfo?.createdAt || ''
-  if (field === 'shippedAt') return order.erpInfo?.shippedAt || ''
-  return order.shipDate || ''
-}
-
-/* ========== 计算实际时效（天） ========== */
 function getActualDaysByBase(order: LogisticsOrder, timeBase: SlaTimeBase): number | null {
   const deliveryDate = order.deliveryDate || (order.status === 'delivered' ? order.events?.[0]?.timestamp : null)
   if (!deliveryDate) return null
@@ -59,13 +51,11 @@ function getActualDays(order: LogisticsOrder): number | null {
   return getActualDaysByBase(order, timeBase)
 }
 
-/* ========== 获取达标时效天数 ========== */
 function getSlaDays(order: LogisticsOrder): number {
   const matched = matchSlaRule(order.destinationCountry, order.carrier)
   return matched ? matched.slaDays : order.slaDays
 }
 
-/* ========== 导出CSV ========== */
 function exportToCSV(orders: LogisticsOrder[], filename: string) {
   const BOM = '\uFEFF'
   const headers = [
@@ -103,7 +93,6 @@ function exportToCSV(orders: LogisticsOrder[], filename: string) {
   URL.revokeObjectURL(url)
 }
 
-/* ========== 解析批量搜索文本为号码列表 ========== */
 function parseBatchSearch(text: string): string[] {
   return text
     .split(/[\n,;，；]+/)
@@ -111,11 +100,9 @@ function parseBatchSearch(text: string): string[] {
     .filter(Boolean)
 }
 
-/* ========== 主组件 ========== */
 export default function Tracking() {
   const store = useLogisticsStore()
 
-  /* --- 页面级筛选状态（不修改store.filters） --- */
   const [batchText, setBatchText] = useState('')
   const [carrierFilter, setCarrierFilter] = useState('')
   const [countryFilter, setCountryFilter] = useState('US')
@@ -126,179 +113,143 @@ export default function Tracking() {
   const [teamFilter, setTeamFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
 
-  /* --- 分页状态 --- */
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
 
-  /* --- 批量搜索框展开状态 --- */
-  const [batchExpanded, setBatchExpanded] = useState(true)
+  const [orders, setOrders] = useState<LogisticsOrder[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
+    countries: [],
+    carriers: [],
+    warehouses: [],
+    teams: [],
+    statuses: [],
+  })
+
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [importerOpen, setImporterOpen] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  /* --- 从store获取全量订单（受store.filters影响） --- */
-  const allOrders = useMemo(() => store.getFilteredOrders(), [store.orders, store.filters])
-
-  /* --- 筛选下拉选项（基于allOrders，不受页面筛选影响） --- */
-  const countries = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.destinationCountry).filter(Boolean))
-    return Array.from(set).sort()
-  }, [allOrders])
-
-  const warehouses = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.erpInfo?.warehouse).filter(Boolean) as string[])
-    return Array.from(set).sort()
-  }, [allOrders])
-
-  const teams = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.erpInfo?.team).filter(Boolean) as string[])
-    return Array.from(set).sort()
-  }, [allOrders])
-
-  /* --- 应用页面级筛选 --- */
-  const filteredOrders = useMemo(() => {
-    let result = allOrders
-
-    /* 批量搜索：按号码列表过滤 */
-    if (batchText.trim()) {
-      const keywords = parseBatchSearch(batchText)
-      if (keywords.length > 0) {
-        result = result.filter((o) =>
-          keywords.some(
-            (kw) =>
-              o.orderId.toLowerCase().includes(kw.toLowerCase()) ||
-              o.trackingNumber.toLowerCase().includes(kw.toLowerCase())
-          )
-        )
-      }
-    }
-
-    /* 承运商筛选 */
-    if (carrierFilter) {
-      result = result.filter((o) => o.carrier === carrierFilter)
-    }
-
-    /* 目的国家筛选 */
-    if (countryFilter) {
-      result = result.filter((o) => o.destinationCountry === countryFilter)
-    }
-
-    /* 时间维度+日期范围筛选 */
-    if (timeStart) {
-      result = result.filter((o) => {
-        const t = getOrderTime(o, timeField)
-        return t ? dayjs(t).isAfter(dayjs(timeStart).subtract(1, 'day')) : false
-      })
-    }
-    if (timeEnd) {
-      result = result.filter((o) => {
-        const t = getOrderTime(o, timeField)
-        return t ? dayjs(t).isBefore(dayjs(timeEnd).add(1, 'day')) : false
-      })
-    }
-
-    /* 发货仓库筛选 */
-    if (warehouseFilter) {
-      result = result.filter((o) => o.erpInfo?.warehouse === warehouseFilter)
-    }
-
-    /* 发货团队筛选 */
-    if (teamFilter) {
-      result = result.filter((o) => o.erpInfo?.team === teamFilter)
-    }
-
-    /* 主状态筛选 */
-    if (statusFilter) {
-      result = result.filter((o) => o.status === statusFilter)
-    }
-
-    return result
-  }, [allOrders, batchText, carrierFilter, countryFilter, timeField, timeStart, timeEnd, warehouseFilter, teamFilter, statusFilter])
-
-  /* --- 分页计算 --- */
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize))
-  const paged = filteredOrders.slice((page - 1) * pageSize, page * pageSize)
-
-  /* --- 选中订单详情 --- */
-  const selectedOrder = store.selectedOrderId ? store.getOrderById(store.selectedOrderId) : undefined
-
-  /* --- 导入履约单回调 --- */
-  const handleFulfillmentImport = useCallback((rows: ParsedFulfillmentRow[]) => {
-    const store = useLogisticsStore.getState()
-    const existingOrders = store.orders
-
-    const newOrUpdatedOrders = rows.map((row) => {
-      const existing = existingOrders.find(
-        (o) => o.trackingNumber === row.trackingNumber || o.erpInfo?.orderNo === row.orderNo
-      )
-
-      if (existing) {
-        return {
-          ...existing,
-          erpInfo: {
-            ...existing.erpInfo,
-            orderNo: row.orderNo,
-            warehouseCode: row.warehouseCode,
-            platform: row.platform,
-            shippingQty: row.shippingQty,
-            destinationCountry: row.destinationCountry,
-            paymentTime: row.paymentTime,
-            createdAt: row.createdAt || existing.erpInfo?.createdAt,
-            packingTime: row.packingTime,
-            checkoutTime: row.checkoutTime,
-            logisticsProvider: row.logisticsProvider,
-            logisticsProviderDisplayName: row.logisticsProviderDisplayName,
-            currentChannel: row.currentChannel,
-            trackingNumber: row.trackingNumber,
-            warehouse: existing.erpInfo?.warehouse || row.warehouseCode,
-          },
-          destinationCountry: row.destinationCountry || existing.destinationCountry,
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      try {
+        const result = await fetchOrdersFromD1({
+          status: statusFilter || undefined,
+          country: countryFilter || undefined,
+          carrier: carrierFilter || undefined,
+          warehouse: warehouseFilter || undefined,
+          team: teamFilter || undefined,
+          search: batchText.trim() || undefined,
+          timeField,
+          timeStart: timeStart || undefined,
+          timeEnd: timeEnd || undefined,
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+        })
+        if (!cancelled) {
+          setOrders(result.orders)
+          setTotalCount(result.total)
         }
+      } catch {
+        if (!cancelled) {
+          setOrders([])
+          setTotalCount(0)
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
       }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [batchText, carrierFilter, countryFilter, timeField, timeStart, timeEnd, warehouseFilter, teamFilter, statusFilter, page, pageSize, refreshKey])
 
-      return {
-        orderId: `ERP-${row.orderNo}`,
+  useEffect(() => {
+    fetchFilterOptions().then(setFilterOptions).catch(() => {})
+  }, [refreshKey])
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+
+  const selectedOrder = selectedOrderId ? orders.find((o) => o.orderId === selectedOrderId) : undefined
+
+  const hasActiveFilter = batchText.trim() || carrierFilter || countryFilter || timeStart || timeEnd || warehouseFilter || teamFilter || statusFilter
+
+  const handleFulfillmentImport = useCallback(async (rows: ParsedFulfillmentRow[]) => {
+    const newOrders: LogisticsOrder[] = rows.map((row) => ({
+      orderId: `ERP-${row.orderNo}`,
+      trackingNumber: row.trackingNumber,
+      carrier: row.logisticsProvider || row.logisticsProviderDisplayName || '未知',
+      origin: '',
+      destination: '',
+      destinationCountry: row.destinationCountry || '',
+      status: 'not_found' as const,
+      shipDate: row.checkoutTime || '',
+      deliveryDate: undefined,
+      slaDays: 20,
+      actualDays: undefined,
+      weight: 0,
+      currentLocation: '',
+      events: [],
+      erpInfo: {
+        orderNo: row.orderNo,
+        warehouseCode: row.warehouseCode,
+        platform: row.platform,
+        shippingQty: row.shippingQty,
+        destinationCountry: row.destinationCountry,
+        paymentTime: row.paymentTime,
+        createdAt: row.createdAt,
+        packingTime: row.packingTime,
+        checkoutTime: row.checkoutTime,
+        logisticsProvider: row.logisticsProvider,
+        logisticsProviderDisplayName: row.logisticsProviderDisplayName,
+        currentChannel: row.currentChannel,
         trackingNumber: row.trackingNumber,
-        carrier: row.logisticsProvider || row.logisticsProviderDisplayName || '未知',
-        origin: '',
-        destination: '',
-        destinationCountry: row.destinationCountry || '',
-        status: 'not_found' as const,
-        shipDate: row.checkoutTime || '',
-        deliveryDate: undefined,
-        slaDays: 20,
-        actualDays: undefined,
-        weight: 0,
-        currentLocation: '',
-        events: [],
-        erpInfo: {
-          orderNo: row.orderNo,
-          warehouseCode: row.warehouseCode,
-          platform: row.platform,
-          shippingQty: row.shippingQty,
-          destinationCountry: row.destinationCountry,
-          paymentTime: row.paymentTime,
-          createdAt: row.createdAt,
-          packingTime: row.packingTime,
-          checkoutTime: row.checkoutTime,
-          logisticsProvider: row.logisticsProvider,
-          logisticsProviderDisplayName: row.logisticsProviderDisplayName,
-          currentChannel: row.currentChannel,
-          trackingNumber: row.trackingNumber,
-          shippedAt: row.checkoutTime || '',
-          warehouse: row.warehouseCode || '',
-        },
-        syncMeta: {
-          source: 'csv_import' as const,
-          lastSyncAt: new Date().toISOString(),
-          syncVersion: 1,
-        },
-      }
-    })
-
-    store.mergeOrders(newOrUpdatedOrders)
+        shippedAt: row.checkoutTime || '',
+        warehouse: row.warehouseCode || '',
+      },
+      syncMeta: {
+        source: 'csv_import' as const,
+        lastSyncAt: '',
+        syncVersion: 1,
+      },
+    }))
+    await store.mergeOrders(newOrders)
     setImporterOpen(false)
-  }, [])
+    setRefreshKey((k) => k + 1)
+  }, [store])
 
-  /* --- 重置所有页面筛选 --- */
+  const handleAddTrackingNumbers = useCallback(async () => {
+    const numbers = parseBatchSearch(batchText)
+    if (numbers.length === 0) return
+    const newOrders: LogisticsOrder[] = numbers.map((num) => ({
+      orderId: `MANUAL-${num}`,
+      trackingNumber: num,
+      carrier: '未知',
+      origin: '',
+      destination: '',
+      destinationCountry: '',
+      status: 'not_found' as const,
+      shipDate: '',
+      deliveryDate: undefined,
+      slaDays: 20,
+      actualDays: undefined,
+      weight: 0,
+      currentLocation: '',
+      events: [],
+      syncMeta: {
+        source: 'csv_import' as const,
+        lastSyncAt: new Date().toISOString(),
+        syncVersion: 1,
+      },
+    }))
+    await store.mergeOrders(newOrders)
+    setBatchText('')
+    setRefreshKey((k) => k + 1)
+  }, [batchText, store])
+
   const resetFilters = useCallback(() => {
     setBatchText('')
     setCarrierFilter('')
@@ -312,19 +263,14 @@ export default function Tracking() {
     setPage(1)
   }, [])
 
-  /* --- 切换每页条数 --- */
   const handlePageSizeChange = useCallback((size: number) => {
     setPageSize(size)
     setPage(1)
   }, [])
 
-  /* --- 是否有筛选条件激活 --- */
-  const hasActiveFilter = batchText.trim() || carrierFilter || countryFilter || timeStart || timeEnd || warehouseFilter || teamFilter || statusFilter
-
   return (
     <div className="flex h-full relative animate-fade-in-up">
       <div className={`flex-1 min-w-0 transition-all duration-300 ${selectedOrder ? 'lg:mr-[440px]' : ''}`}>
-        {/* ===== 页头 ===== */}
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">订单追踪</h1>
@@ -339,15 +285,15 @@ export default function Tracking() {
             </button>
             <button
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-all"
-              onClick={() => exportToCSV(filteredOrders, `订单追踪_${dayjs().format('YYYYMMDDHHmm')}`)}
-              disabled={filteredOrders.length === 0}
+              onClick={() => exportToCSV(orders, `订单追踪_${dayjs().format('YYYYMMDDHHmm')}`)}
+              disabled={orders.length === 0}
             >
               <FileDown className="w-4 h-4" />导出CSV
             </button>
             <button
               className="btn-primary flex items-center gap-2"
               onClick={() => store.syncFrom17Track()}
-              disabled={!store.track17Config.apiKey || store.track17Config.syncing || store.orders.length === 0}
+              disabled={!store.track17Config.apiKey || store.track17Config.syncing || totalCount === 0}
               title={!store.track17Config.apiKey ? '请先在数据源设置中配置密钥' : '从17track更新所有订单数据'}
             >
               {store.track17Config.syncing
@@ -360,29 +306,29 @@ export default function Tracking() {
           </div>
         </div>
 
-        {/* ===== 筛选区域 ===== */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mb-5 p-5">
-          {/* 批量搜索框 */}
           <div className="mb-4">
-            <div
-              className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
-              onClick={() => setBatchExpanded((v) => !v)}
-            >
-              <Search className="w-4 h-4 text-blue-400" />
-              <span>批量搜索</span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${batchExpanded ? 'rotate-180' : ''}`} />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                <Search className="w-4 h-4 text-blue-400" />
+                <span>批量搜索</span>
+              </div>
+              <button
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={handleAddTrackingNumbers}
+                disabled={!batchText.trim()}
+              >
+                <Plus className="w-3.5 h-3.5" />添加追踪号
+              </button>
             </div>
-            {batchExpanded && (
-              <textarea
-                className="mt-2.5 w-full h-24 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none transition-all"
-                placeholder="输入多个追踪号或订单号，每行一个或逗号分隔..."
-                value={batchText}
-                onChange={(e) => { setBatchText(e.target.value); setPage(1) }}
-              />
-            )}
+            <textarea
+              className="mt-2.5 w-full h-24 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 resize-none transition-all"
+              placeholder="输入多个追踪号或订单号，每行一个或逗号分隔..."
+              value={batchText}
+              onChange={(e) => { setBatchText(e.target.value); setPage(1) }}
+            />
           </div>
 
-          {/* 多维筛选行 */}
           <div className="flex flex-wrap items-end gap-3">
             <select
               className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 min-w-[120px] transition-all"
@@ -390,7 +336,7 @@ export default function Tracking() {
               onChange={(e) => { setCarrierFilter(e.target.value); setPage(1) }}
             >
               <option value="">全部承运商</option>
-              {CARRIERS.map((c) => <option key={c} value={c}>{c}</option>)}
+              {filterOptions.carriers.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
 
             <select
@@ -399,7 +345,7 @@ export default function Tracking() {
               onChange={(e) => { setCountryFilter(e.target.value); setPage(1) }}
             >
               <option value="">全部国家</option>
-              {countries.map((c) => <option key={c} value={c}>{c}</option>)}
+              {filterOptions.countries.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
 
             <select
@@ -430,7 +376,7 @@ export default function Tracking() {
               onChange={(e) => { setWarehouseFilter(e.target.value); setPage(1) }}
             >
               <option value="">全部仓库</option>
-              {warehouses.map((w) => <option key={w} value={w}>{w}</option>)}
+              {filterOptions.warehouses.map((w) => <option key={w} value={w}>{w}</option>)}
             </select>
 
             <select
@@ -439,7 +385,7 @@ export default function Tracking() {
               onChange={(e) => { setTeamFilter(e.target.value); setPage(1) }}
             >
               <option value="">全部团队</option>
-              {teams.map((t) => <option key={t} value={t}>{t}</option>)}
+              {filterOptions.teams.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
 
             <select
@@ -464,7 +410,6 @@ export default function Tracking() {
           </div>
         </div>
 
-        {/* ===== 数据表格 ===== */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -484,15 +429,24 @@ export default function Tracking() {
                 </tr>
               </thead>
               <tbody>
-                {paged.map((o) => {
+                {loading ? (
+                  <tr>
+                    <td colSpan={11} className="text-center py-20 text-slate-300">
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+                        <span>加载中...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : orders.map((o) => {
                   const actual = getActualDays(o)
                   const sla = getSlaDays(o)
                   const isSlaOk = actual !== null && actual <= sla
                   return (
                     <tr
                       key={o.orderId}
-                      className={`border-b border-slate-50 cursor-pointer transition-colors hover:bg-blue-50/30 ${store.selectedOrderId === o.orderId ? 'bg-blue-50/50' : ''}`}
-                      onClick={() => store.selectOrder(o.orderId)}
+                      className={`border-b border-slate-50 cursor-pointer transition-colors hover:bg-blue-50/30 ${selectedOrderId === o.orderId ? 'bg-blue-50/50' : ''}`}
+                      onClick={() => setSelectedOrderId(o.orderId)}
                     >
                       <td className="px-5 py-3.5 font-medium text-slate-800">{o.orderId}</td>
                       <td className="px-5 py-3.5 text-slate-400 font-mono text-xs">{o.trackingNumber}</td>
@@ -517,7 +471,7 @@ export default function Tracking() {
                       <td className="px-5 py-3.5 text-center">
                         <button
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
-                          onClick={(e) => { e.stopPropagation(); store.selectOrder(o.orderId) }}
+                          onClick={(e) => { e.stopPropagation(); setSelectedOrderId(o.orderId) }}
                         >
                           <Eye className="w-3 h-3" />查看
                         </button>
@@ -525,7 +479,7 @@ export default function Tracking() {
                     </tr>
                   )
                 })}
-                {paged.length === 0 && (
+                {!loading && orders.length === 0 && (
                   <tr>
                     <td colSpan={11} className="text-center py-20 text-slate-300">
                       <div className="flex flex-col items-center gap-2">
@@ -539,11 +493,10 @@ export default function Tracking() {
             </table>
           </div>
 
-          {/* ===== 分页栏 ===== */}
           <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-50">
             <div className="flex items-center gap-3">
               <span className="text-xs text-slate-400">
-                共 <span className="font-medium text-slate-600">{filteredOrders.length}</span> 条
+                共 <span className="font-medium text-slate-600">{totalCount}</span> 条
               </span>
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-slate-400">每页</span>
@@ -580,25 +533,21 @@ export default function Tracking() {
         </div>
       </div>
 
-      {/* ===== 侧边栏：订单详情 ===== */}
       {selectedOrder && (
         <>
-          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30" onClick={() => store.selectOrder(null)} />
+          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30" onClick={() => setSelectedOrderId(null)} />
           <div className="fixed right-0 top-0 h-full w-[440px] bg-white border-l border-slate-100 z-40 flex flex-col shadow-2xl animate-slide-in">
-            {/* 侧边栏头部 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-50">
               <h2 className="text-base font-semibold text-slate-900">订单详情</h2>
               <button
                 className="text-slate-300 hover:text-slate-500 transition-colors p-1.5 rounded-lg hover:bg-slate-50"
-                onClick={() => store.selectOrder(null)}
+                onClick={() => setSelectedOrderId(null)}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* 侧边栏内容 */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              {/* 基本信息 */}
               <div className="space-y-3">
                 {selectedOrder.erpInfo?.orderNo && <DetailRow label="履约单号" value={selectedOrder.erpInfo.orderNo} />}
                 <DetailRow label="订单号" value={selectedOrder.orderId} />
@@ -648,7 +597,6 @@ export default function Tracking() {
                   <StatusBadge status={selectedOrder.status} />
                 </div>
 
-                {/* 时效信息 */}
                 <div className="flex items-center justify-between py-1.5">
                   <span className="text-xs text-slate-400">实际时效</span>
                   {(() => {
@@ -671,7 +619,6 @@ export default function Tracking() {
                 )}
               </div>
 
-              {/* 异常信息 */}
               {selectedOrder.exception && (
                 <div className="rounded-2xl border border-red-100 bg-red-50/50 p-4 space-y-2">
                   <div className="flex items-center gap-2 text-red-500 text-sm font-semibold">
@@ -689,7 +636,6 @@ export default function Tracking() {
                 </div>
               )}
 
-              {/* 物流轨迹 */}
               <div>
                 <h3 className="text-sm font-semibold text-slate-900 mb-3">物流轨迹</h3>
                 <TrackingTimeline order={selectedOrder} />
@@ -699,7 +645,6 @@ export default function Tracking() {
         </>
       )}
 
-      {/* ===== 侧边栏滑入动画 ===== */}
       <style>{`
         @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .animate-slide-in { animation: slideIn 0.25s ease-out; }
@@ -714,7 +659,6 @@ export default function Tracking() {
   )
 }
 
-/* ========== 详情行组件 ========== */
 function DetailRow({ label, value, mono, icon }: { label: string; value: string; mono?: boolean; icon?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between py-1.5">

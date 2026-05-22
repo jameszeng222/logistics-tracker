@@ -1,56 +1,25 @@
-import { useMemo, useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Download, X, PackageCheck, TrendingUp,
   Clock, ShieldCheck, CheckCircle2, Globe, Truck,
   Calendar, Filter, BarChart3, Target,
 } from 'lucide-react'
-import dayjs from 'dayjs'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid, Legend, Cell, ReferenceLine,
+  ResponsiveContainer, CartesianGrid, Legend, ReferenceLine,
 } from 'recharts'
-import { useLogisticsStore } from '@/store/logisticsStore'
-import { calculateMetrics } from '@/utils/metricsCalculator'
-import { matchSlaRule, loadSlaRules } from '@/config/slaConfig'
+import {
+  fetchKpi, fetchByCarrier, fetchByCountry,
+  fetchP90Matrix, fetchTransitDistribution,
+  fetchSlaTrend, fetchCarrierP90, fetchFilterOptions,
+} from '@/services/d1Api'
 import { getCountryName } from '@/utils/countryNames'
-import type { LogisticsOrder } from '@/types'
-
-function percentile(arr: number[], p: number): number {
-  if (arr.length === 0) return 0
-  const sorted = [...arr].sort((a, b) => a - b)
-  const idx = Math.ceil((p / 100) * sorted.length) - 1
-  return sorted[Math.max(0, idx)]
-}
-
-function getShipDate(order: LogisticsOrder): string | null {
-  if (order.erpInfo?.shippedAt) return order.erpInfo.shippedAt
-  if (order.shipDate) return order.shipDate
-  if (order.events.length > 0) {
-    const last = order.events[order.events.length - 1]
-    if (last?.timestamp) return last.timestamp
-  }
-  return null
-}
-
-function getDeliveryDate(order: LogisticsOrder): string | null {
-  if (order.deliveryDate) return order.deliveryDate
-  for (const ev of order.events) {
-    if (ev.subStatus === 'Delivered_Other' || ev.status === 'delivered') {
-      return ev.timestamp
-    }
-  }
-  if (order.status === 'delivered' && order.events.length > 0) {
-    return order.events[0].timestamp
-  }
-  return null
-}
-
-function calcDays(start: string, end: string): number {
-  const s = new Date(start).getTime()
-  const e = new Date(end).getTime()
-  if (isNaN(s) || isNaN(e)) return -1
-  return Math.round((e - s) / (1000 * 60 * 60 * 24) * 10) / 10
-}
+import type {
+  KpiResult, CarrierStatsItem, CountryStatsItem,
+  P90MatrixResult, TransitDistributionItem,
+  SlaTrendItem, CarrierP90Item, FilterOptions,
+  StatsFilterParams,
+} from '@/services/d1Api'
 
 function exportStatsCSV(headers: string[], rows: string[][], filename: string) {
   const BOM = '\uFEFF'
@@ -67,31 +36,35 @@ function exportStatsCSV(headers: string[], rows: string[][], filename: string) {
 
 type TabKey = 'country' | 'carrier'
 
-interface P90Cell {
-  p90: number
-  slaDays: number | null
-  passed: boolean | null
-  count: number
-}
-
 const BUCKET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#F97316', '#EF4444', '#8B5CF6']
 const BUCKET_KEYS = ['le2', 'd3', 'd4_5', 'd6_7', 'd8_10', 'gt10'] as const
 const BUCKET_LABELS = ['≤2天', '3天', '5天', '7天', '8-10天', '>10天']
 
-function getBucket(days: number): typeof BUCKET_KEYS[number] {
-  if (days <= 2) return 'le2'
-  if (days === 3) return 'd3'
-  if (days <= 5) return 'd4_5'
-  if (days <= 7) return 'd6_7'
-  if (days <= 10) return 'd8_10'
-  return 'gt10'
+function SkeletonBlock({ className }: { className?: string }) {
+  return <div className={`animate-pulse bg-slate-200 rounded ${className || ''}`} />
+}
+
+function SkeletonCard() {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/80 p-5">
+      <div className="flex items-center gap-3 mb-4">
+        <SkeletonBlock className="w-9 h-9 rounded-xl" />
+        <SkeletonBlock className="w-16 h-3" />
+      </div>
+      <SkeletonBlock className="w-20 h-7" />
+    </div>
+  )
+}
+
+function SkeletonChart({ height = 300 }: { height?: number }) {
+  return (
+    <div className="flex items-center justify-center" style={{ height }}>
+      <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+    </div>
+  )
 }
 
 export default function DeliveryDashboard() {
-  const store = useLogisticsStore()
-  const allOrders = useMemo(() => store.getFilteredOrders(), [store.orders, store.filters])
-  const rules = useMemo(() => loadSlaRules(), [])
-
   const [carrierFilter, setCarrierFilter] = useState('')
   const [countryFilter, setCountryFilter] = useState('US')
   const [timeStart, setTimeStart] = useState('')
@@ -100,40 +73,67 @@ export default function DeliveryDashboard() {
   const [sortKey, setSortKey] = useState<string>('')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
-  const countries = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.destinationCountry).filter(Boolean))
-    return Array.from(set).sort()
-  }, [allOrders])
+  const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
+  const [kpiData, setKpiData] = useState<KpiResult | null>(null)
+  const [countryStats, setCountryStats] = useState<CountryStatsItem[]>([])
+  const [carrierStats, setCarrierStats] = useState<CarrierStatsItem[]>([])
+  const [p90Matrix, setP90Matrix] = useState<P90MatrixResult | null>(null)
+  const [transitDist, setTransitDist] = useState<TransitDistributionItem[]>([])
+  const [slaTrend, setSlaTrend] = useState<SlaTrendItem[]>([])
+  const [carrierP90, setCarrierP90] = useState<CarrierP90Item[]>([])
 
-  const carriers = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.carrier))
-    return Array.from(set).sort()
-  }, [allOrders])
+  const [loading, setLoading] = useState(true)
 
-  const filteredOrders = useMemo(() => {
-    let result = allOrders
-    if (timeStart) {
-      result = result.filter((o) => {
-        const t = o.erpInfo?.shippedAt || o.shipDate
-        return t ? dayjs(t).isAfter(dayjs(timeStart).subtract(1, 'day')) : false
+  const buildParams = useCallback((): StatsFilterParams => {
+    const p: StatsFilterParams = {}
+    if (countryFilter) p.country = countryFilter
+    if (carrierFilter) p.carrier = carrierFilter
+    if (timeStart || timeEnd) {
+      p.timeField = 'shippedAt'
+      if (timeStart) p.timeStart = timeStart
+      if (timeEnd) p.timeEnd = timeEnd
+    }
+    return p
+  }, [countryFilter, carrierFilter, timeStart, timeEnd])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    const params = buildParams()
+    Promise.all([
+      fetchKpi(params),
+      fetchByCountry(params),
+      fetchByCarrier(params),
+      fetchP90Matrix(params),
+      fetchTransitDistribution(params),
+      fetchSlaTrend(params),
+      fetchCarrierP90(params),
+    ])
+      .then(([kpi, country, carrier, p90, transit, sla, cp90]) => {
+        if (cancelled) return
+        setKpiData(kpi)
+        setCountryStats(country)
+        setCarrierStats(carrier)
+        setP90Matrix(p90)
+        setTransitDist(transit)
+        setSlaTrend(sla)
+        setCarrierP90(cp90)
+        setLoading(false)
       })
-    }
-    if (timeEnd) {
-      result = result.filter((o) => {
-        const t = o.erpInfo?.shippedAt || o.shipDate
-        return t ? dayjs(t).isBefore(dayjs(timeEnd).add(1, 'day')) : false
+      .catch(() => {
+        if (!cancelled) setLoading(false)
       })
-    }
-    if (countryFilter) {
-      result = result.filter((o) => o.destinationCountry === countryFilter)
-    }
-    if (carrierFilter) {
-      result = result.filter((o) => o.carrier === carrierFilter)
-    }
-    return result
-  }, [allOrders, timeStart, timeEnd, countryFilter, carrierFilter])
+    return () => { cancelled = true }
+  }, [buildParams])
 
-  const metrics = useMemo(() => calculateMetrics(filteredOrders), [filteredOrders])
+  useEffect(() => {
+    fetchFilterOptions()
+      .then(setFilterOptions)
+      .catch(() => {})
+  }, [])
+
+  const countries = filterOptions?.countries || []
+  const carriers = filterOptions?.carriers || []
 
   function sortFn(a: Record<string, any>, b: Record<string, any>): number {
     if (!sortKey) return (b.total || 0) - (a.total || 0)
@@ -165,125 +165,10 @@ export default function DeliveryDashboard() {
     return '#EF4444'
   }
 
-  const countryStats = useMemo(() => {
-    return Object.entries(metrics.deliveryRateByCountry)
-      .map(([country, data]) => {
-        const daysArr = metrics.transitDaysByCountry[country]?.days || []
-        const p90 = percentile(daysArr, 90)
-        const slaData = metrics.slaByCountry[country]
-        let slaDays = 0
-        for (const rule of rules) {
-          if (!rule.enabled) continue
-          const region = rule.destinationRegion
-          if (region === '*') { slaDays = rule.slaDays; break }
-          const sampleOrder = filteredOrders.find((o) => o.destinationCountry === country)
-          if (sampleOrder) {
-            const matched = matchSlaRule(country, sampleOrder.carrier, rules)
-            if (matched) { slaDays = matched.slaDays; break }
-          }
-        }
-        if (slaDays === 0) {
-          const sampleOrder = filteredOrders.find((o) => o.destinationCountry === country)
-          if (sampleOrder) slaDays = sampleOrder.slaDays
-        }
-        return {
-          country,
-          total: data.total,
-          delivered: data.delivered,
-          deliveryRate: data.rate,
-          avgDays: metrics.transitDaysByCountry[country]?.avg || 0,
-          p90,
-          slaDays,
-          slaTotal: slaData?.total || 0,
-          slaPassed: slaData?.passed || 0,
-          slaRate: slaData?.rate || 0,
-        }
-      })
-      .sort((a, b) => sortFn(a, b))
-  }, [metrics, rules, filteredOrders, sortKey, sortDir])
-
-  const carrierStats = useMemo(() => {
-    return Object.entries(metrics.deliveryRateByCarrier)
-      .map(([carrier, data]) => {
-        const daysArr = metrics.transitDaysByCarrier[carrier]?.days || []
-        const p90 = percentile(daysArr, 90)
-        const slaData = metrics.slaByCarrier[carrier]
-        let slaDays = 0
-        for (const rule of rules) {
-          if (!rule.enabled) continue
-          if (rule.carrierPattern === '*') { slaDays = rule.slaDays; break }
-          try {
-            const regex = new RegExp(rule.carrierPattern, 'i')
-            if (regex.test(carrier)) { slaDays = rule.slaDays; break }
-          } catch {
-            if (carrier.toLowerCase().includes(rule.carrierPattern.toLowerCase())) { slaDays = rule.slaDays; break }
-          }
-        }
-        if (slaDays === 0) {
-          const sampleOrder = filteredOrders.find((o) => o.carrier === carrier)
-          if (sampleOrder) slaDays = sampleOrder.slaDays
-        }
-        return {
-          carrier,
-          total: data.total,
-          delivered: data.delivered,
-          deliveryRate: data.rate,
-          avgDays: metrics.transitDaysByCarrier[carrier]?.avg || 0,
-          p90,
-          slaDays,
-          slaTotal: slaData?.total || 0,
-          slaPassed: slaData?.passed || 0,
-          slaRate: slaData?.rate || 0,
-        }
-      })
-      .sort((a, b) => sortFn(a, b))
-  }, [metrics, rules, filteredOrders, sortKey, sortDir])
-
-  const p90Matrix = useMemo(() => {
-    const carrierSet = new Set<string>()
-    const countrySet = new Set<string>()
-    const groupDays: Record<string, Record<string, number[]>> = {}
-
-    for (const o of filteredOrders) {
-      if (o.status !== 'delivered') continue
-      const shipDate = getShipDate(o)
-      const deliveryDate = getDeliveryDate(o)
-      if (!shipDate || !deliveryDate) continue
-      const days = calcDays(shipDate, deliveryDate)
-      if (days < 0) continue
-
-      const carrier = o.carrier
-      const country = o.destinationCountry
-      carrierSet.add(carrier)
-      countrySet.add(country)
-      if (!groupDays[carrier]) groupDays[carrier] = {}
-      if (!groupDays[carrier][country]) groupDays[carrier][country] = []
-      groupDays[carrier][country].push(days)
-    }
-
-    const carrierList = Array.from(carrierSet).sort()
-    const countryList = Array.from(countrySet).sort()
-
-    const matrix: Record<string, Record<string, P90Cell>> = {}
-    for (const carrier of carrierList) {
-      matrix[carrier] = {}
-      for (const country of countryList) {
-        const daysArr = groupDays[carrier]?.[country] || []
-        const p90 = percentile(daysArr, 90)
-        const matchedRule = matchSlaRule(country, carrier, rules)
-        const slaDays = matchedRule ? matchedRule.slaDays : null
-        const passed = slaDays !== null ? p90 <= slaDays : null
-        matrix[carrier][country] = { p90, slaDays, passed, count: daysArr.length }
-      }
-    }
-
-    return { carrierList, countryList, matrix }
-  }, [filteredOrders, rules])
-
   const isSingleCountry = !!countryFilter && countryFilter !== '*'
 
-  const singleCountryData = useMemo(() => {
-    if (!isSingleCountry) return []
+  const singleCountryData = (() => {
+    if (!isSingleCountry || !p90Matrix) return []
     return p90Matrix.carrierList
       .map((carrier) => {
         const cell = p90Matrix.matrix[carrier]?.[countryFilter]
@@ -296,100 +181,54 @@ export default function DeliveryDashboard() {
       })
       .filter((d): d is { channel: string; p90: number; slaDays: number | null } => d !== null)
       .sort((a, b) => b.p90 - a.p90)
-  }, [p90Matrix, countryFilter, isSingleCountry])
+  })()
 
-  const transitBucketData = useMemo(() => {
-    const buckets: Record<string, Record<string, number>> = {}
-    for (const o of filteredOrders) {
-      if (o.status !== 'delivered') continue
-      const shipDate = getShipDate(o)
-      const deliveryDate = getDeliveryDate(o)
-      if (!shipDate || !deliveryDate) continue
-      const days = calcDays(shipDate, deliveryDate)
-      if (days < 0) continue
-      const country = o.destinationCountry
-      if (!buckets[country]) buckets[country] = { le2: 0, d3: 0, d4_5: 0, d6_7: 0, d8_10: 0, gt10: 0 }
-      buckets[country][getBucket(days)]++
-    }
-    return Object.entries(buckets)
-      .sort(([, a], [, b]) => {
-        const totalA = a.le2 + a.d3 + a.d4_5 + a.d6_7 + a.d8_10 + a.gt10
-        const totalB = b.le2 + b.d3 + b.d4_5 + b.d6_7 + b.d8_10 + b.gt10
-        return totalB - totalA
-      })
-      .map(([country, b]) => {
-        const total = b.le2 + b.d3 + b.d4_5 + b.d6_7 + b.d8_10 + b.gt10
-        const pct = (v: number) => total > 0 ? Math.round(v / total * 1000) / 10 : 0
-        return {
-          country: getCountryName(country),
-          le2: pct(b.le2),
-          d3: pct(b.d3),
-          d4_5: pct(b.d4_5),
-          d6_7: pct(b.d6_7),
-          d8_10: pct(b.d8_10),
-          gt10: pct(b.gt10),
-        }
-      })
-  }, [filteredOrders])
+  const transitBucketData = transitDist.map((item) => ({
+    country: getCountryName(item.country),
+    le2: item.le2.pct,
+    d3: item.d3.pct,
+    d4_5: item.d4_5.pct,
+    d6_7: item.d6_7.pct,
+    d8_10: item.d8_10.pct,
+    gt10: item.gt10.pct,
+  }))
 
-  const carrierCompareData = useMemo(() => {
-    return carrierStats
-      .filter((s) => s.avgDays > 0)
-      .map((s) => ({
+  const carrierCompareData = carrierStats
+    .filter((s) => s.avgDays > 0)
+    .map((s) => ({
+      carrier: s.carrier,
+      avgDays: Number(s.avgDays.toFixed(1)),
+      p90: (() => {
+        const cp = carrierP90.find((c) => c.carrier === s.carrier)
+        return cp ? Number(cp.p90.toFixed(1)) : 0
+      })(),
+    }))
+
+  const carrierP90Progress = carrierP90
+    .filter((s) => s.p90 > 0)
+    .map((s) => {
+      const ratio = s.slaDays && s.slaDays > 0 ? s.p90 / s.slaDays : 0
+      const passed = !!(s.slaDays && s.slaDays > 0 && s.p90 <= s.slaDays)
+      return {
         carrier: s.carrier,
-        avgDays: Number(s.avgDays.toFixed(1)),
-        p90: Number(s.p90.toFixed(1)),
-      }))
-  }, [carrierStats])
+        p90: s.p90,
+        slaDays: s.slaDays || 0,
+        ratio: Math.min(ratio, 2),
+        passed,
+      }
+    })
+    .sort((a, b) => a.ratio - b.ratio)
 
-  const slaTrendData = useMemo(() => {
-    const monthMap: Record<string, { total: number; passed: number }> = {}
-    for (const o of filteredOrders) {
-      if (o.status !== 'delivered') continue
-      const shipDate = getShipDate(o)
-      const deliveryDate = getDeliveryDate(o)
-      if (!shipDate || !deliveryDate) continue
-      const days = calcDays(shipDate, deliveryDate)
-      if (days < 0) continue
-      const month = dayjs(shipDate).format('YYYY-MM')
-      if (!monthMap[month]) monthMap[month] = { total: 0, passed: 0 }
-      monthMap[month].total++
-      const matchedRule = matchSlaRule(o.destinationCountry, o.carrier, rules)
-      const slaDays = matchedRule ? matchedRule.slaDays : o.slaDays
-      if (days <= slaDays) monthMap[month].passed++
-    }
-    return Object.entries(monthMap)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, d]) => ({
-        month,
-        rate: d.total > 0 ? Number(((d.passed / d.total) * 100).toFixed(1)) : 0,
-      }))
-  }, [filteredOrders, rules])
+  const sortedCountryStats = [...countryStats].sort(sortFn)
+  const sortedCarrierStats = [...carrierStats].sort(sortFn)
 
-  const carrierP90Progress = useMemo(() => {
-    return carrierStats
-      .filter((s) => s.p90 > 0)
-      .map((s) => {
-        const ratio = s.slaDays > 0 ? s.p90 / s.slaDays : 0
-        const passed = s.slaDays > 0 && s.p90 <= s.slaDays
-        return {
-          carrier: s.carrier,
-          p90: s.p90,
-          slaDays: s.slaDays,
-          ratio: Math.min(ratio, 2),
-          passed,
-        }
-      })
-      .sort((a, b) => a.ratio - b.ratio)
-  }, [carrierStats])
-
-  const kpis = [
-    { label: '已签收数', value: metrics.deliveredOrders, icon: PackageCheck, bg: '#EFF6FF', color: '#3B82F6' },
-    { label: '妥投率', value: `${(metrics.deliveryRate * 100).toFixed(1)}%`, icon: TrendingUp, bg: '#ECFDF5', color: '#10B981' },
-    { label: '平均时效', value: `${metrics.avgTransitDays.toFixed(1)}天`, icon: Clock, bg: '#FFFBEB', color: '#F59E0B' },
-    { label: 'SLA达标率', value: `${(metrics.slaComplianceRate * 100).toFixed(1)}%`, icon: ShieldCheck, bg: '#EEF2FF', color: '#6366F1' },
-    { label: 'SLA达标数', value: `${metrics.slaPassed}/${metrics.slaTotal}`, icon: CheckCircle2, bg: '#F0FDF4', color: '#22C55E' },
-  ]
+  const kpis = kpiData ? [
+    { label: '已签收数', value: kpiData.deliveredOrders, icon: PackageCheck, bg: '#EFF6FF', color: '#3B82F6' },
+    { label: '妥投率', value: `${(kpiData.deliveryRate * 100).toFixed(1)}%`, icon: TrendingUp, bg: '#ECFDF5', color: '#10B981' },
+    { label: '平均时效', value: `${kpiData.avgTransitDays.toFixed(1)}天`, icon: Clock, bg: '#FFFBEB', color: '#F59E0B' },
+    { label: 'SLA达标率', value: `${(kpiData.slaComplianceRate * 100).toFixed(1)}%`, icon: ShieldCheck, bg: '#EEF2FF', color: '#6366F1' },
+    { label: 'SLA达标数', value: `${kpiData.slaPassed}/${kpiData.slaTotal}`, icon: CheckCircle2, bg: '#F0FDF4', color: '#22C55E' },
+  ] : []
 
   const hasAnyFilter = !!(timeStart || timeEnd || countryFilter || carrierFilter)
 
@@ -414,28 +253,24 @@ export default function DeliveryDashboard() {
 
   function handleExportCSV() {
     if (tab === 'country') {
-      const headers = ['国家', '有效订单', '已签收', '妥投率', '平均时效', 'P90时效', 'SLA天数', 'SLA达标率']
-      const rows = countryStats.map((r) => [
+      const headers = ['国家', '有效订单', '已签收', '妥投率', '平均时效', 'SLA达标率']
+      const rows = sortedCountryStats.map((r) => [
         getCountryName(r.country),
         String(r.total),
         String(r.delivered),
         (r.deliveryRate * 100).toFixed(1) + '%',
         r.avgDays > 0 ? r.avgDays + '天' : '-',
-        r.p90 > 0 ? r.p90.toFixed(1) + '天' : '-',
-        r.slaDays > 0 ? r.slaDays + '天' : '-',
         r.slaTotal > 0 ? (r.slaRate * 100).toFixed(1) + '%' : '-',
       ])
       exportStatsCSV(headers, rows, '时效看板_按国家统计')
     } else {
-      const headers = ['渠道', '有效订单', '已签收', '妥投率', '平均时效', 'P90时效', 'SLA天数', 'SLA达标率']
-      const rows = carrierStats.map((r) => [
+      const headers = ['渠道', '有效订单', '已签收', '妥投率', '平均时效', 'SLA达标率']
+      const rows = sortedCarrierStats.map((r) => [
         r.carrier,
         String(r.total),
         String(r.delivered),
         (r.deliveryRate * 100).toFixed(1) + '%',
         r.avgDays > 0 ? r.avgDays + '天' : '-',
-        r.p90 > 0 ? r.p90.toFixed(1) + '天' : '-',
-        r.slaDays > 0 ? r.slaDays + '天' : '-',
         r.slaTotal > 0 ? (r.slaRate * 100).toFixed(1) + '%' : '-',
       ])
       exportStatsCSV(headers, rows, '时效看板_按渠道统计')
@@ -456,7 +291,7 @@ export default function DeliveryDashboard() {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-slate-800">筛选条件</h3>
-            <p className="text-[11px] text-slate-400">{filteredOrders.length} / {allOrders.length} 条订单</p>
+            <p className="text-[11px] text-slate-400">服务端聚合统计</p>
           </div>
         </div>
 
@@ -542,24 +377,30 @@ export default function DeliveryDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
-        {kpis.map((cfg) => {
-          const Icon = cfg.icon
-          return (
-            <div key={cfg.label} className="bg-white rounded-2xl border border-slate-200/80 p-5 hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: cfg.bg }}>
-                  <Icon className="w-4 h-4" style={{ color: cfg.color }} />
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
+          {kpis.map((cfg) => {
+            const Icon = cfg.icon
+            return (
+              <div key={cfg.label} className="bg-white rounded-2xl border border-slate-200/80 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: cfg.bg }}>
+                    <Icon className="w-4 h-4" style={{ color: cfg.color }} />
+                  </div>
+                  <span className="text-xs text-slate-400 font-medium">{cfg.label}</span>
                 </div>
-                <span className="text-xs text-slate-400 font-medium">{cfg.label}</span>
+                <div>
+                  <span className="text-2xl font-bold text-slate-900">{cfg.value}</span>
+                </div>
               </div>
-              <div>
-                <span className="text-2xl font-bold text-slate-900">{cfg.value}</span>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
@@ -571,7 +412,9 @@ export default function DeliveryDashboard() {
             <p className="text-[11px] text-slate-400">单元格显示P90时效（90%订单在X天内签收），绿色=达标，红色=未达标</p>
           </div>
         </div>
-        {p90Matrix.carrierList.length === 0 || (isSingleCountry ? singleCountryData.length === 0 : p90Matrix.countryList.length === 0) ? (
+        {loading ? (
+          <SkeletonChart height={200} />
+        ) : !p90Matrix || p90Matrix.carrierList.length === 0 || (isSingleCountry ? singleCountryData.length === 0 : p90Matrix.countryList.length === 0) ? (
           <div className="py-16 text-center">
             <ShieldCheck className="w-10 h-10 text-slate-200 mx-auto mb-3" />
             <p className="text-sm text-slate-400">暂无数据</p>
@@ -688,15 +531,15 @@ export default function DeliveryDashboard() {
                   <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('delivered')}>已签收 <SortIcon field="delivered" /></th>
                   <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('deliveryRate')}>妥投率 <SortIcon field="deliveryRate" /></th>
                   <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('avgDays')}>平均时效 <SortIcon field="avgDays" /></th>
-                  <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('p90')}>P90时效 <SortIcon field="p90" /></th>
-                  <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('slaDays')}>SLA天数 <SortIcon field="slaDays" /></th>
                   <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('slaRate')}>SLA达标率 <SortIcon field="slaRate" /></th>
                 </tr>
               </thead>
               <tbody>
-                {countryStats.length === 0 ? (
-                  <tr><td colSpan={8} className="py-12 text-center text-slate-400 text-sm">暂无数据</td></tr>
-                ) : countryStats.map((r) => (
+                {loading ? (
+                  <tr><td colSpan={6} className="py-8 text-center"><div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto" /></td></tr>
+                ) : sortedCountryStats.length === 0 ? (
+                  <tr><td colSpan={6} className="py-12 text-center text-slate-400 text-sm">暂无数据</td></tr>
+                ) : sortedCountryStats.map((r) => (
                   <tr key={r.country} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                     <td className="py-3 px-5 font-medium text-slate-900 whitespace-nowrap">{getCountryName(r.country)}</td>
                     <td className="py-3 px-4 text-slate-600 tabular-nums">{r.total}</td>
@@ -706,14 +549,6 @@ export default function DeliveryDashboard() {
                       <span className={`text-xs font-semibold ${r.avgDays > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
                         {r.avgDays > 0 ? `${r.avgDays}天` : '-'}
                       </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`text-xs font-semibold ${r.p90 > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
-                        {r.p90 > 0 ? `${r.p90.toFixed(1)}天` : '-'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-xs font-semibold text-slate-600">{r.slaDays > 0 ? `${r.slaDays}天` : '-'}</span>
                     </td>
                     <td className="py-3 px-4">{r.slaTotal > 0 ? renderRateBar(r.slaRate) : <span className="text-xs text-slate-300">-</span>}</td>
                   </tr>
@@ -733,15 +568,15 @@ export default function DeliveryDashboard() {
                   <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('delivered')}>已签收 <SortIcon field="delivered" /></th>
                   <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('deliveryRate')}>妥投率 <SortIcon field="deliveryRate" /></th>
                   <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('avgDays')}>平均时效 <SortIcon field="avgDays" /></th>
-                  <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('p90')}>P90时效 <SortIcon field="p90" /></th>
-                  <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('slaDays')}>SLA天数 <SortIcon field="slaDays" /></th>
                   <th className="text-left text-[11px] text-slate-500 font-medium py-3 px-4 cursor-pointer select-none" onClick={() => toggleSort('slaRate')}>SLA达标率 <SortIcon field="slaRate" /></th>
                 </tr>
               </thead>
               <tbody>
-                {carrierStats.length === 0 ? (
-                  <tr><td colSpan={8} className="py-12 text-center text-slate-400 text-sm">暂无数据</td></tr>
-                ) : carrierStats.map((r) => (
+                {loading ? (
+                  <tr><td colSpan={6} className="py-8 text-center"><div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto" /></td></tr>
+                ) : sortedCarrierStats.length === 0 ? (
+                  <tr><td colSpan={6} className="py-12 text-center text-slate-400 text-sm">暂无数据</td></tr>
+                ) : sortedCarrierStats.map((r) => (
                   <tr key={r.carrier} className="border-t border-slate-50 hover:bg-blue-50/30 transition-colors">
                     <td className="py-3 px-5 font-medium text-slate-900 whitespace-nowrap">{r.carrier}</td>
                     <td className="py-3 px-4 text-slate-600 tabular-nums">{r.total}</td>
@@ -751,14 +586,6 @@ export default function DeliveryDashboard() {
                       <span className={`text-xs font-semibold ${r.avgDays > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
                         {r.avgDays > 0 ? `${r.avgDays}天` : '-'}
                       </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`text-xs font-semibold ${r.p90 > 0 ? 'text-slate-800' : 'text-slate-300'}`}>
-                        {r.p90 > 0 ? `${r.p90.toFixed(1)}天` : '-'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-xs font-semibold text-slate-600">{r.slaDays > 0 ? `${r.slaDays}天` : '-'}</span>
                     </td>
                     <td className="py-3 px-4">{r.slaTotal > 0 ? renderRateBar(r.slaRate) : <span className="text-xs text-slate-300">-</span>}</td>
                   </tr>
@@ -781,7 +608,9 @@ export default function DeliveryDashboard() {
             </div>
           </div>
           <div className="px-4 py-4">
-            {transitBucketData.length === 0 ? (
+            {loading ? (
+              <SkeletonChart height={320} />
+            ) : transitBucketData.length === 0 ? (
               <div className="py-12 text-center">
                 <BarChart3 className="w-10 h-10 text-slate-200 mx-auto mb-3" />
                 <p className="text-sm text-slate-400">暂无数据</p>
@@ -817,7 +646,9 @@ export default function DeliveryDashboard() {
             </div>
           </div>
           <div className="px-4 py-4">
-            {carrierCompareData.length === 0 ? (
+            {loading ? (
+              <SkeletonChart height={320} />
+            ) : carrierCompareData.length === 0 ? (
               <div className="py-12 text-center">
                 <Target className="w-10 h-10 text-slate-200 mx-auto mb-3" />
                 <p className="text-sm text-slate-400">暂无数据</p>
@@ -851,14 +682,16 @@ export default function DeliveryDashboard() {
             </div>
           </div>
           <div className="px-4 py-4">
-            {slaTrendData.length === 0 ? (
+            {loading ? (
+              <SkeletonChart height={280} />
+            ) : slaTrend.length === 0 ? (
               <div className="py-12 text-center">
                 <TrendingUp className="w-10 h-10 text-slate-200 mx-auto mb-3" />
                 <p className="text-sm text-slate-400">暂无数据</p>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={slaTrendData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                <LineChart data={slaTrend} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748B' }} />
                   <YAxis tick={{ fontSize: 11, fill: '#64748B' }} domain={[0, 100]} unit="%" />
@@ -881,7 +714,9 @@ export default function DeliveryDashboard() {
             </div>
           </div>
           <div className="px-5 py-4 space-y-4">
-            {carrierP90Progress.length === 0 ? (
+            {loading ? (
+              <SkeletonChart height={200} />
+            ) : carrierP90Progress.length === 0 ? (
               <div className="py-12 text-center">
                 <ShieldCheck className="w-10 h-10 text-slate-200 mx-auto mb-3" />
                 <p className="text-sm text-slate-400">暂无数据</p>

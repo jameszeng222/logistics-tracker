@@ -1,14 +1,12 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Clock, AlertTriangle, Search, Eye, X, Plus, Trash2, Save,
   ToggleLeft, ToggleRight, Shield, FileWarning, RotateCcw,
   Filter, Globe, Truck, Warehouse, Users, Calendar, Copy,
+  Loader2,
 } from 'lucide-react'
-import dayjs from 'dayjs'
-import { useLogisticsStore } from '@/store/logisticsStore'
 import {
   loadMonitoringRules, saveMonitoringRules, DEFAULT_MONITORING_RULES,
-  matchMonitoringRule, checkNotOnline, checkNotDelivered, checkNotShipped, checkKeyword,
 } from '@/config/monitoringConfig'
 import type { MonitoringRule } from '@/config/monitoringConfig'
 import { loadProviders, loadChannels, getChannelsForProvider } from '@/config/carrierConfig'
@@ -19,6 +17,10 @@ import { STATUS_LABELS } from '@/types'
 import type { OrderStatus, LogisticsOrder } from '@/types'
 import StatusBadge from '@/components/StatusBadge'
 import TrackingTimeline from '@/components/TrackingTimeline'
+import {
+  fetchMonitoringAlerts, fetchFilterOptions, lookupOrders,
+} from '@/services/d1Api'
+import type { MonitoringAlertItem, FilterOptions, MonitoringAlertsResult } from '@/services/d1Api'
 
 type TimeField = 'createdAt' | 'shippedAt'
 
@@ -47,25 +49,6 @@ const MATCH_MODE_OPTIONS: { value: MonitoringRule['matchMode']; label: string }[
   { value: 'any', label: '任意匹配' },
   { value: 'all', label: '全部匹配' },
 ]
-
-interface AlertItem {
-  orderId: string
-  trackingNumber: string
-  carrier: string
-  destination: string
-  destinationCountry: string
-  warehouse: string
-  team: string
-  status: OrderStatus
-  ruleNames: string[]
-  alertTypes: string[]
-  order: LogisticsOrder
-}
-
-function getOrderTime(order: AlertItem['order'], field: TimeField): string {
-  if (field === 'createdAt') return order.erpInfo?.createdAt || ''
-  return order.erpInfo?.shippedAt || order.shipDate || ''
-}
 
 function KeywordInput({ onAdd }: { onAdd: (value: string) => void }) {
   const [value, setValue] = useState('')
@@ -98,9 +81,6 @@ function KeywordInput({ onAdd }: { onAdd: (value: string) => void }) {
 }
 
 export default function FulfillmentMonitor() {
-  const store = useLogisticsStore()
-  const allOrders = useMemo(() => store.getFilteredOrders(), [store.orders, store.filters])
-
   const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'keywords'>('overview')
   const [rules, setRules] = useState<MonitoringRule[]>([])
   const [keywordRules, setKeywordRules] = useState<StatusKeywordRule[]>(loadStatusKeywordRules())
@@ -111,93 +91,61 @@ export default function FulfillmentMonitor() {
   const [timeEnd, setTimeEnd] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(20)
-  const [trackingOrder, setTrackingOrder] = useState<AlertItem['order'] | null>(null)
+  const [trackingOrder, setTrackingOrder] = useState<LogisticsOrder | null>(null)
+  const [loadingTracking, setLoadingTracking] = useState(false)
+
+  const [alerts, setAlerts] = useState<MonitoringAlertItem[]>([])
+  const [totalAlerts, setTotalAlerts] = useState(0)
+  const [counts, setCounts] = useState<MonitoringAlertsResult['counts']>({ not_shipped: 0, not_online: 0, not_delivered: 0, keyword: 0 })
+  const [loading, setLoading] = useState(false)
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ countries: [], carriers: [], warehouses: [], teams: [], statuses: [] })
+
+  const [rulesVersion, setRulesVersion] = useState(0)
 
   useEffect(() => {
     setRules(loadMonitoringRules())
   }, [])
 
+  useEffect(() => {
+    fetchFilterOptions().then(setFilterOptions).catch(() => {})
+  }, [])
+
+  const loadAlerts = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params: Record<string, any> = {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      }
+      if (countryFilter) params.country = countryFilter
+      if (carrierFilter) params.carrier = carrierFilter
+      if (timeField) params.timeField = timeField
+      if (timeStart) params.timeStart = timeStart
+      if (timeEnd) params.timeEnd = timeEnd
+
+      const result = await fetchMonitoringAlerts(params, rules.filter((r) => r.enabled), keywordRules.filter((r) => r.enabled))
+      setAlerts(result.alerts)
+      setTotalAlerts(result.total)
+      setCounts(result.counts)
+    } catch {
+      setAlerts([])
+      setTotalAlerts(0)
+      setCounts({ not_shipped: 0, not_online: 0, not_delivered: 0, keyword: 0 })
+    } finally {
+      setLoading(false)
+    }
+  }, [page, pageSize, countryFilter, carrierFilter, timeField, timeStart, timeEnd, rules, keywordRules, rulesVersion])
+
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      loadAlerts()
+    }
+  }, [activeTab, loadAlerts])
+
   const primaryCarriers = useMemo(() => loadProviders(), [])
   const secondaryChannels = useMemo(() => loadChannels(), [])
 
-  const carriers = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.carrier))
-    return Array.from(set).sort()
-  }, [allOrders])
-
-  const countries = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.destinationCountry).filter(Boolean))
-    return Array.from(set).sort()
-  }, [allOrders])
-
-  const alerts = useMemo(() => {
-    const map = new Map<string, AlertItem>()
-    const enabledRules = rules.filter((r) => r.enabled)
-    for (const order of allOrders) {
-      for (const rule of enabledRules) {
-        if (matchMonitoringRule(order, rule, primaryCarriers)) {
-          const existing = map.get(order.orderId)
-          if (existing) {
-            if (!existing.ruleNames.includes(rule.name)) {
-              existing.ruleNames.push(rule.name)
-            }
-            if (!existing.alertTypes.includes(rule.type)) {
-              existing.alertTypes.push(rule.type)
-            }
-          } else {
-            map.set(order.orderId, {
-              orderId: order.orderId,
-              trackingNumber: order.trackingNumber,
-              carrier: order.carrier,
-              destination: order.destination,
-              destinationCountry: order.destinationCountry,
-              warehouse: order.erpInfo?.warehouse || '-',
-              team: order.erpInfo?.team || '-',
-              status: order.status,
-              ruleNames: [rule.name],
-              alertTypes: [rule.type],
-              order,
-            })
-          }
-        }
-      }
-    }
-    return Array.from(map.values())
-  }, [allOrders, rules, primaryCarriers])
-
-  const kpis = useMemo(() => {
-    const notShipped = alerts.filter((a) => a.alertTypes.includes('not_shipped')).length
-    const notOnline = alerts.filter((a) => a.alertTypes.includes('not_online')).length
-    const notDelivered = alerts.filter((a) => a.alertTypes.includes('not_delivered')).length
-    const keyword = alerts.filter((a) => a.alertTypes.includes('keyword')).length
-    return { notShipped, notOnline, notDelivered, keyword, total: alerts.length }
-  }, [alerts])
-
-  const filteredAlerts = useMemo(() => {
-    let result = alerts
-    if (carrierFilter) {
-      result = result.filter((a) => a.carrier === carrierFilter)
-    }
-    if (countryFilter) {
-      result = result.filter((a) => a.destinationCountry === countryFilter)
-    }
-    if (timeStart) {
-      result = result.filter((a) => {
-        const t = getOrderTime(a.order, timeField)
-        return t ? dayjs(t).isAfter(dayjs(timeStart).subtract(1, 'day')) : false
-      })
-    }
-    if (timeEnd) {
-      result = result.filter((a) => {
-        const t = getOrderTime(a.order, timeField)
-        return t ? dayjs(t).isBefore(dayjs(timeEnd).add(1, 'day')) : false
-      })
-    }
-    return result
-  }, [alerts, carrierFilter, countryFilter, timeField, timeStart, timeEnd])
-
-  const totalPages = Math.max(1, Math.ceil(filteredAlerts.length / pageSize))
-  const pagedAlerts = filteredAlerts.slice((page - 1) * pageSize, page * pageSize)
+  const totalPages = Math.max(1, Math.ceil(totalAlerts / pageSize))
 
   const updateRule = (id: string, updates: Partial<MonitoringRule>) => {
     setRules((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)))
@@ -230,6 +178,25 @@ export default function FulfillmentMonitor() {
 
   const handleSave = () => {
     saveMonitoringRules(rules)
+    setRulesVersion((v) => v + 1)
+  }
+
+  const handleSaveKeywords = () => {
+    saveStatusKeywordRules(keywordRules)
+    setRulesVersion((v) => v + 1)
+  }
+
+  const handleViewTracking = async (alert: MonitoringAlertItem) => {
+    setLoadingTracking(true)
+    try {
+      const orders = await lookupOrders({ trackingNumbers: [alert.trackingNumber] })
+      if (orders.length > 0) {
+        setTrackingOrder(orders[0])
+      }
+    } catch {
+    } finally {
+      setLoadingTracking(false)
+    }
   }
 
   const hasAnyFilter = !!(carrierFilter || countryFilter || timeStart || timeEnd)
@@ -300,7 +267,7 @@ export default function FulfillmentMonitor() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-400 font-medium">超时未出库</p>
-                  <p className="text-3xl font-bold text-orange-600 mt-1 tabular-nums">{kpis.notShipped}</p>
+                  <p className="text-3xl font-bold text-orange-600 mt-1 tabular-nums">{counts.not_shipped}</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
                   <Warehouse className="w-5 h-5 text-orange-500" />
@@ -311,7 +278,7 @@ export default function FulfillmentMonitor() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-400 font-medium">超时未上网</p>
-                  <p className="text-3xl font-bold text-blue-600 mt-1 tabular-nums">{kpis.notOnline}</p>
+                  <p className="text-3xl font-bold text-blue-600 mt-1 tabular-nums">{counts.not_online}</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
                   <Clock className="w-5 h-5 text-blue-500" />
@@ -322,7 +289,7 @@ export default function FulfillmentMonitor() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-400 font-medium">超时未妥投</p>
-                  <p className="text-3xl font-bold text-amber-600 mt-1 tabular-nums">{kpis.notDelivered}</p>
+                  <p className="text-3xl font-bold text-amber-600 mt-1 tabular-nums">{counts.not_delivered}</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-amber-500" />
@@ -333,7 +300,7 @@ export default function FulfillmentMonitor() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-400 font-medium">关键字异常</p>
-                  <p className="text-3xl font-bold text-red-600 mt-1 tabular-nums">{kpis.keyword}</p>
+                  <p className="text-3xl font-bold text-red-600 mt-1 tabular-nums">{counts.keyword}</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
                   <FileWarning className="w-5 h-5 text-red-500" />
@@ -344,7 +311,7 @@ export default function FulfillmentMonitor() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-400 font-medium">总告警数</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">{kpis.total}</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">{totalAlerts}</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
                   <Shield className="w-5 h-5 text-slate-500" />
@@ -360,7 +327,7 @@ export default function FulfillmentMonitor() {
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-slate-800">筛选条件</h3>
-                <p className="text-[11px] text-slate-400">{filteredAlerts.length} / {alerts.length} 条告警</p>
+                <p className="text-[11px] text-slate-400">{totalAlerts} 条告警</p>
               </div>
             </div>
 
@@ -374,7 +341,7 @@ export default function FulfillmentMonitor() {
                     onChange={(e) => { setCountryFilter(e.target.value); setPage(1) }}
                   >
                     <option value="">全部国家</option>
-                    {countries.map((c) => (
+                    {filterOptions.countries.map((c) => (
                       <option key={c} value={c}>{getCountryName(c)}</option>
                     ))}
                   </select>
@@ -388,7 +355,7 @@ export default function FulfillmentMonitor() {
                     onChange={(e) => { setCarrierFilter(e.target.value); setPage(1) }}
                   >
                     <option value="">全部承运商</option>
-                    {carriers.map((c) => (
+                    {filterOptions.carriers.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -427,19 +394,19 @@ export default function FulfillmentMonitor() {
                   {countryFilter && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                       国家: {getCountryName(countryFilter)}
-                      <button onClick={() => setCountryFilter('')}><X className="w-2.5 h-2.5" /></button>
+                      <button onClick={() => { setCountryFilter(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                     </span>
                   )}
                   {carrierFilter && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                       承运商: {carrierFilter}
-                      <button onClick={() => setCarrierFilter('')}><X className="w-2.5 h-2.5" /></button>
+                      <button onClick={() => { setCarrierFilter(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                     </span>
                   )}
                   {(timeStart || timeEnd) && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                       {TIME_FIELD_OPTIONS.find((o) => o.value === timeField)?.label}: {timeStart || '...'} ~ {timeEnd || '...'}
-                      <button onClick={() => { setTimeStart(''); setTimeEnd('') }}><X className="w-2.5 h-2.5" /></button>
+                      <button onClick={() => { setTimeStart(''); setTimeEnd(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                     </span>
                   )}
                   <button
@@ -462,12 +429,20 @@ export default function FulfillmentMonitor() {
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-slate-800">告警订单</h3>
-                  <p className="text-[11px] text-slate-400">{filteredAlerts.length} 条记录</p>
+                  <p className="text-[11px] text-slate-400">{totalAlerts} 条记录</p>
                 </div>
               </div>
+              {loading && (
+                <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+              )}
             </div>
 
-            {filteredAlerts.length === 0 ? (
+            {loading ? (
+              <div className="py-16 text-center">
+                <Loader2 className="w-8 h-8 text-blue-400 mx-auto mb-3 animate-spin" />
+                <p className="text-sm text-slate-400">正在加载告警数据...</p>
+              </div>
+            ) : alerts.length === 0 ? (
               <div className="py-16 text-center">
                 <Shield className="w-10 h-10 text-slate-200 mx-auto mb-3" />
                 <p className="text-sm text-slate-400">暂无触发的监控告警</p>
@@ -480,7 +455,6 @@ export default function FulfillmentMonitor() {
                       <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">订单号</th>
                       <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">追踪号</th>
                       <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">承运商</th>
-                      <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">目的地</th>
                       <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">国家</th>
                       <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">仓库</th>
                       <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">团队</th>
@@ -491,12 +465,11 @@ export default function FulfillmentMonitor() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pagedAlerts.map((a) => (
+                    {alerts.map((a) => (
                       <tr key={a.orderId} className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
                         <td className="py-4 px-5 font-medium text-slate-900 whitespace-nowrap">{a.orderId}</td>
                         <td className="py-4 px-5 text-slate-500 font-mono text-sm">{a.trackingNumber}</td>
                         <td className="py-4 px-5 text-slate-600 whitespace-nowrap">{a.carrier}</td>
-                        <td className="py-4 px-5 text-slate-600 whitespace-nowrap">{a.destination}</td>
                         <td className="py-4 px-5 text-slate-600">{getCountryName(a.destinationCountry)}</td>
                         <td className="py-4 px-5 text-slate-500">{a.warehouse}</td>
                         <td className="py-4 px-5 text-slate-500">{a.team}</td>
@@ -513,13 +486,18 @@ export default function FulfillmentMonitor() {
                             })}
                           </div>
                         </td>
-                        <td className="py-4 px-5"><StatusBadge status={a.status} /></td>
+                        <td className="py-4 px-5"><StatusBadge status={a.status as OrderStatus} /></td>
                         <td className="py-4 px-5">
                           <button
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
-                            onClick={() => setTrackingOrder(a.order)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                            disabled={loadingTracking}
+                            onClick={() => handleViewTracking(a)}
                           >
-                            <Eye className="w-3.5 h-3.5" />
+                            {loadingTracking ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Eye className="w-3.5 h-3.5" />
+                            )}
                             查看轨迹
                           </button>
                         </td>
@@ -530,11 +508,11 @@ export default function FulfillmentMonitor() {
               </div>
             )}
 
-            {filteredAlerts.length > 0 && (
+            {totalAlerts > 0 && (
               <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-50">
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-slate-400">
-                    共 <span className="font-medium text-slate-600">{filteredAlerts.length}</span> 条
+                    共 <span className="font-medium text-slate-600">{totalAlerts}</span> 条
                   </span>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-slate-400">每页</span>
@@ -934,7 +912,7 @@ export default function FulfillmentMonitor() {
               </button>
               <button
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm"
-                onClick={() => saveStatusKeywordRules(keywordRules)}
+                onClick={handleSaveKeywords}
               >
                 <Save className="w-3.5 h-3.5" />
                 保存

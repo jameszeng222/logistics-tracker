@@ -1,14 +1,16 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Search, X, Truck, PackageCheck, Clock, Info,
   Package, AlertTriangle, HelpCircle,
-  RotateCcw, PackageX, Download, Eye, ExternalLink,
-  FileSpreadsheet, Calendar, Copy,
+  RotateCcw, PackageX,
+  Calendar,
   Warehouse, Users, Globe, Filter,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ExternalLink, Loader2,
 } from 'lucide-react'
-import dayjs from 'dayjs'
-import { useLogisticsStore } from '@/store/logisticsStore'
+import {
+  fetchStatusDistribution, fetchOrdersFromD1, fetchFilterOptions,
+} from '@/services/d1Api'
+import type { StatsFilterParams, FetchOrdersParams, FilterOptions, StatusDistributionResult } from '@/services/d1Api'
 import {
   STATUS_LABELS, STATUS_COLORS, STATUS_LEVEL, STATUS_DESCRIPTIONS,
   STATUS_SUB_STATUSES, SUB_STATUS_LABELS,
@@ -93,48 +95,7 @@ type ActiveSelection =
   | { type: 'sub'; key: string }
   | null
 
-// 获取订单指定时间字段的值
-function getOrderTime(order: LogisticsOrder, field: TimeField): string {
-  if (field === 'createdAt') return order.erpInfo?.createdAt || ''
-  if (field === 'shippedAt') return order.erpInfo?.shippedAt || ''
-  return order.shipDate || ''
-}
-
-function exportToCSV(orders: LogisticsOrder[], filename: string) {
-  const BOM = '\uFEFF'
-  const headers = ['订单号', '追踪号', '承运商', '始发地', '目的地', '目的国家', '主状态', '异常描述', '发货仓库', '发货团队', '最新轨迹时间', '最新轨迹描述']
-  const rows = orders.map((o) => {
-    const last = o.events[0]
-    return [
-      o.orderId,
-      o.trackingNumber,
-      o.carrier,
-      o.origin,
-      o.destination,
-      o.destinationCountry,
-      STATUS_LABELS[o.status],
-      o.exception?.description || last?.description || '',
-      o.erpInfo?.warehouse || '',
-      o.erpInfo?.team || '',
-      last?.timestamp || '',
-      last?.description || '',
-    ].map((v) => `"${String(v).replace(/"/g, '""')}"`)
-  })
-  const csv = BOM + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${filename}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 export default function Exceptions() {
-  const store = useLogisticsStore()
-  const allOrders = useMemo(() => store.getFilteredOrders(), [store.orders, store.filters])
-
-  // 页面级筛选状态
   const [active, setActive] = useState<ActiveSelection>(null)
   const [searchText, setSearchText] = useState('')
   const [carrierFilter, setCarrierFilter] = useState('')
@@ -144,121 +105,83 @@ export default function Exceptions() {
   const [timeField, setTimeField] = useState<TimeField>('shippedAt')
   const [timeStart, setTimeStart] = useState('')
   const [timeEnd, setTimeEnd] = useState('')
-  const [trackingOrder, setTrackingOrder] = useState<LogisticsOrder | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(20)
+  const [trackingOrder, setTrackingOrder] = useState<LogisticsOrder | null>(null)
 
-  // 筛选下拉选项（基于 allOrders，不受页面筛选影响）
-  const carriers = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.carrier))
-    return Array.from(set).sort()
-  }, [allOrders])
+  const [statusDist, setStatusDist] = useState<StatusDistributionResult>({ byStatus: {}, bySubStatus: {}, total: 0 })
+  const [filterOpts, setFilterOpts] = useState<FilterOptions>({ countries: [], carriers: [], warehouses: [], teams: [], statuses: [] })
+  const [orders, setOrders] = useState<LogisticsOrder[]>([])
+  const [ordersTotal, setOrdersTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [distLoading, setDistLoading] = useState(true)
 
-  const countries = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.destinationCountry).filter(Boolean))
-    return Array.from(set).sort()
-  }, [allOrders])
+  const statsParams = useMemo((): StatsFilterParams => {
+    const params: StatsFilterParams = {}
+    if (countryFilter) params.country = countryFilter
+    if (carrierFilter) params.carrier = carrierFilter
+    if (warehouseFilter) params.warehouse = warehouseFilter
+    if (teamFilter) params.team = teamFilter
+    if (timeField) params.timeField = timeField
+    if (timeStart) params.timeStart = timeStart
+    if (timeEnd) params.timeEnd = timeEnd
+    return params
+  }, [countryFilter, carrierFilter, warehouseFilter, teamFilter, timeField, timeStart, timeEnd])
 
-  const warehouses = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.erpInfo?.warehouse).filter(Boolean) as string[])
-    return Array.from(set).sort()
-  }, [allOrders])
+  useEffect(() => {
+    setDistLoading(true)
+    fetchStatusDistribution(statsParams)
+      .then(setStatusDist)
+      .catch(console.error)
+      .finally(() => setDistLoading(false))
+  }, [statsParams])
 
-  const teams = useMemo(() => {
-    const set = new Set(allOrders.map((o) => o.erpInfo?.team).filter(Boolean) as string[])
-    return Array.from(set).sort()
-  }, [allOrders])
+  useEffect(() => {
+    fetchFilterOptions()
+      .then(setFilterOpts)
+      .catch(console.error)
+  }, [])
 
-  // 先按筛选条件过滤 allOrders 得到 filteredAllOrders
-  const filteredAllOrders = useMemo(() => {
-    let result = allOrders
-    if (searchText) {
-      const s = searchText.toLowerCase()
-      result = result.filter((o) =>
-        o.orderId.toLowerCase().includes(s) ||
-        o.trackingNumber.toLowerCase().includes(s) ||
-        o.destination.toLowerCase().includes(s) ||
-        o.carrier.toLowerCase().includes(s)
-      )
+  useEffect(() => {
+    const params: FetchOrdersParams = {
+      ...statsParams,
+      search: searchText || undefined,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
     }
-    if (timeStart) {
-      result = result.filter((o) => {
-        const t = getOrderTime(o, timeField)
-        return t ? dayjs(t).isAfter(dayjs(timeStart).subtract(1, 'day')) : false
-      })
-    }
-    if (timeEnd) {
-      result = result.filter((o) => {
-        const t = getOrderTime(o, timeField)
-        return t ? dayjs(t).isBefore(dayjs(timeEnd).add(1, 'day')) : false
-      })
-    }
-    if (carrierFilter) {
-      result = result.filter((o) => o.carrier === carrierFilter)
-    }
-    if (countryFilter) {
-      result = result.filter((o) => o.destinationCountry === countryFilter)
-    }
-    if (warehouseFilter) {
-      result = result.filter((o) => o.erpInfo?.warehouse === warehouseFilter)
-    }
-    if (teamFilter) {
-      result = result.filter((o) => o.erpInfo?.team === teamFilter)
-    }
-    return result
-  }, [allOrders, searchText, timeField, timeStart, timeEnd, carrierFilter, countryFilter, warehouseFilter, teamFilter])
-
-  // 基于 filteredAllOrders 计算状态分布（卡片数量随筛选变化）
-  const statusDistribution = useMemo(() => {
-    const byStatus: Record<string, number> = {}
-    const bySubStatus: Record<string, number> = {}
-    filteredAllOrders.forEach((o) => {
-      byStatus[o.status] = (byStatus[o.status] || 0) + 1
-      const currentSub = o.events[0]?.subStatus
-      if (currentSub) {
-        bySubStatus[currentSub] = (bySubStatus[currentSub] || 0) + 1
+    if (active) {
+      if (active.type === 'status') {
+        if (active.key === RETURNING_KEY) {
+          params.status = 'exception'
+          params.subStatus = 'Exception_Returning'
+        } else {
+          params.status = active.key
+        }
+      } else {
+        params.subStatus = active.key
       }
-    })
-    return { byStatus, bySubStatus, total: filteredAllOrders.length }
-  }, [filteredAllOrders])
-
-  // 退件中数量（基于 filteredAllOrders）
-  const returningCount = useMemo(() => {
-    return filteredAllOrders.filter((o) =>
-      o.events[0]?.subStatus === 'Exception_Returning'
-    ).length
-  }, [filteredAllOrders])
+    }
+    setLoading(true)
+    fetchOrdersFromD1(params)
+      .then((result) => {
+        setOrders(result.orders)
+        setOrdersTotal(result.total)
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [statsParams, searchText, active, page, pageSize])
 
   const getCount = (key: string): number => {
-    if (key === RETURNING_KEY) return returningCount
-    return statusDistribution.byStatus[key] || 0
+    if (key === RETURNING_KEY) return statusDist.bySubStatus['Exception_Returning'] || 0
+    return statusDist.byStatus[key] || 0
   }
 
   const getSubCount = (sub: string): number => {
-    if (sub === 'Exception_Returning') return returningCount
-    return statusDistribution.bySubStatus[sub] || 0
+    return statusDist.bySubStatus[sub] || 0
   }
 
-  // 应用主状态/子状态选择到 filteredAllOrders，得到 displayOrders
-  const displayOrders = useMemo(() => {
-    if (!active) return filteredAllOrders
-    if (active.type === 'status') {
-      if (active.key === RETURNING_KEY) {
-        return filteredAllOrders.filter((o) =>
-          o.events[0]?.subStatus === 'Exception_Returning'
-        )
-      }
-      return filteredAllOrders.filter((o) => o.status === active.key)
-    }
-    return filteredAllOrders.filter((o) =>
-      o.events[0]?.subStatus === active.key
-    )
-  }, [filteredAllOrders, active])
+  const totalPages = Math.max(1, Math.ceil(ordersTotal / pageSize))
 
-  const totalPages = Math.max(1, Math.ceil(displayOrders.length / pageSize))
-  const pagedOrders = displayOrders.slice((page - 1) * pageSize, page * pageSize)
-
-  // 是否有任意筛选条件激活
   const hasAnyFilter = !!(carrierFilter || countryFilter || warehouseFilter || teamFilter || timeStart || timeEnd || searchText || active)
 
   const clearAllFilters = () => {
@@ -330,9 +253,13 @@ export default function Exceptions() {
                 <p className="text-[10px] text-slate-400 mt-0.5">{item.description}</p>
               </div>
             </div>
-            <span className={`text-2xl font-bold tabular-nums ${
-              count > 0 ? 'text-slate-900' : 'text-slate-300'
-            }`}>{count}</span>
+            {distLoading ? (
+              <Loader2 className="w-5 h-5 text-slate-300 animate-spin" />
+            ) : (
+              <span className={`text-2xl font-bold tabular-nums ${
+                count > 0 ? 'text-slate-900' : 'text-slate-300'
+              }`}>{count}</span>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
@@ -359,7 +286,6 @@ export default function Exceptions() {
           </div>
         </div>
 
-        {/* 颜色条在卡片最下方 */}
         <div className="absolute bottom-0 left-0 right-0 h-1" style={{ backgroundColor: item.color.dot }} />
       </div>
     )
@@ -367,7 +293,6 @@ export default function Exceptions() {
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 whitespace-nowrap">异常处理</h1>
@@ -382,7 +307,6 @@ export default function Exceptions() {
         </div>
       </div>
 
-      {/* 顶部筛选区（页面最顶部，始终显示） */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -390,12 +314,11 @@ export default function Exceptions() {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-slate-800">筛选条件</h3>
-            <p className="text-[11px] text-slate-400">{filteredAllOrders.length} / {allOrders.length} 条订单</p>
+            <p className="text-[11px] text-slate-400">{statusDist.total} 条订单</p>
           </div>
         </div>
 
         <div className="px-5 py-3 bg-slate-50/30 space-y-3">
-          {/* 第一行：搜索框 + 时间筛选 */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -443,7 +366,6 @@ export default function Exceptions() {
             </div>
           </div>
 
-          {/* 第二行：国家 + 承运商 + 仓库 + 团队 */}
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <Globe className="w-3.5 h-3.5 text-slate-400" />
@@ -453,7 +375,7 @@ export default function Exceptions() {
                 onChange={(e) => { setCountryFilter(e.target.value); setPage(1) }}
               >
                 <option value="">全部国家</option>
-                {countries.map((c) => (
+                {filterOpts.countries.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -467,7 +389,7 @@ export default function Exceptions() {
                 onChange={(e) => { setCarrierFilter(e.target.value); setPage(1) }}
               >
                 <option value="">全部承运商</option>
-                {carriers.map((c) => (
+                {filterOpts.carriers.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -481,7 +403,7 @@ export default function Exceptions() {
                 onChange={(e) => { setWarehouseFilter(e.target.value); setPage(1) }}
               >
                 <option value="">全部仓库</option>
-                {warehouses.map((w) => (
+                {filterOpts.warehouses.map((w) => (
                   <option key={w} value={w}>{w}</option>
                 ))}
               </select>
@@ -495,57 +417,56 @@ export default function Exceptions() {
                 onChange={(e) => { setTeamFilter(e.target.value); setPage(1) }}
               >
                 <option value="">全部团队</option>
-                {teams.map((t) => (
+                {filterOpts.teams.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
             </div>
           </div>
 
-          {/* 已选筛选条件标签 */}
           {hasAnyFilter && (
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] text-slate-400">已选筛选：</span>
               {active && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                   {activeLabel}
-                  <button onClick={() => setActive(null)}><X className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => { setActive(null); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                 </span>
               )}
               {searchText && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                   搜索: {searchText}
-                  <button onClick={() => setSearchText('')}><X className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => { setSearchText(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                 </span>
               )}
               {(timeStart || timeEnd) && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                   {TIME_FIELD_OPTIONS.find((o) => o.value === timeField)?.label}: {timeStart || '...'} ~ {timeEnd || '...'}
-                  <button onClick={() => { setTimeStart(''); setTimeEnd('') }}><X className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => { setTimeStart(''); setTimeEnd(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                 </span>
               )}
               {countryFilter && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                   国家: {countryFilter}
-                  <button onClick={() => setCountryFilter('')}><X className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => { setCountryFilter(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                 </span>
               )}
               {carrierFilter && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                   承运商: {carrierFilter}
-                  <button onClick={() => setCarrierFilter('')}><X className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => { setCarrierFilter(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                 </span>
               )}
               {warehouseFilter && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                   仓库: {warehouseFilter}
-                  <button onClick={() => setWarehouseFilter('')}><X className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => { setWarehouseFilter(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                 </span>
               )}
               {teamFilter && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                   团队: {teamFilter}
-                  <button onClick={() => setTeamFilter('')}><X className="w-2.5 h-2.5" /></button>
+                  <button onClick={() => { setTeamFilter(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
                 </span>
               )}
               <button
@@ -560,7 +481,6 @@ export default function Exceptions() {
         </div>
       </div>
 
-      {/* 主状态卡片（2排，9+1个） */}
       <div className="grid grid-cols-5 gap-3">
         {ROW1.map((key) => renderItem(key))}
       </div>
@@ -568,7 +488,6 @@ export default function Exceptions() {
         {ROW2.map((key) => renderItem(key))}
       </div>
 
-      {/* 订单列表（始终显示） */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -577,25 +496,19 @@ export default function Exceptions() {
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-800">{activeLabel}</h3>
-              <p className="text-[11px] text-slate-400">{displayOrders.length} 条记录</p>
+              <p className="text-[11px] text-slate-400">{ordersTotal} 条记录</p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors shadow-sm"
-              onClick={() => exportToCSV(displayOrders, `${activeLabel}_订单列表`)}
-              disabled={displayOrders.length === 0}
-            >
-              <Download className="w-3.5 h-3.5" />
-              导出 CSV
-            </button>
           </div>
         </div>
 
-        {displayOrders.length === 0 ? (
+        {loading ? (
           <div className="py-16 text-center">
-            <FileSpreadsheet className="w-10 h-10 text-slate-200 mx-auto mb-3" />
+            <Loader2 className="w-8 h-8 text-blue-400 mx-auto mb-3 animate-spin" />
+            <p className="text-sm text-slate-400">加载中...</p>
+          </div>
+        ) : ordersTotal === 0 ? (
+          <div className="py-16 text-center">
+            <Package className="w-10 h-10 text-slate-200 mx-auto mb-3" />
             <p className="text-sm text-slate-400">暂无匹配的订单</p>
           </div>
         ) : (
@@ -603,52 +516,48 @@ export default function Exceptions() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50/80">
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">订单号</th>
                   <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">追踪号</th>
                   <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">承运商</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">国家</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">目的国家</th>
                   <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">发货仓</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">团队</th>
                   <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">主状态</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">异常描述</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">最新轨迹</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">操作</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">子状态</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">发货日期</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">实际天数</th>
                 </tr>
               </thead>
               <tbody>
-                {pagedOrders.map((o) => {
-                  const lastEvent = o.events[0]
+                {orders.map((o) => {
+                  const subStatus = o.events[0]?.subStatus
                   return (
                     <tr key={o.orderId} className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
-                      <td className="py-4 px-5 font-medium text-slate-900 whitespace-nowrap">{o.orderId}</td>
-                      <td className="py-4 px-5">
-                        <button
-                          className="text-blue-500 hover:text-blue-700 font-mono text-sm hover:underline transition-colors"
-                          onClick={() => setTrackingOrder(o)}
-                        >
-                          {o.trackingNumber}
-                        </button>
+                      <td className="py-4 px-5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            className="text-blue-500 hover:text-blue-700 font-mono text-sm hover:underline transition-colors"
+                            onClick={() => setTrackingOrder(o)}
+                          >
+                            {o.trackingNumber}
+                          </button>
+                          <a
+                            href={`https://t.17track.net/en#nums=${o.trackingNumber}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-0.5 rounded hover:bg-blue-50 transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3 text-blue-400 hover:text-blue-600" />
+                          </a>
+                        </div>
                       </td>
                       <td className="py-4 px-5 text-slate-600 whitespace-nowrap">{o.carrier}</td>
                       <td className="py-4 px-5 text-slate-600">{o.destinationCountry}</td>
                       <td className="py-4 px-5 text-slate-500">{o.erpInfo?.warehouse || '-'}</td>
-                      <td className="py-4 px-5 text-slate-500">{o.erpInfo?.team || '-'}</td>
                       <td className="py-4 px-5 whitespace-nowrap"><StatusBadge status={o.status} /></td>
-                      <td className="py-4 px-5 text-slate-500 max-w-[360px] truncate">
-                        {o.exception?.description || lastEvent?.description || '-'}
+                      <td className="py-4 px-5 text-slate-500 whitespace-nowrap">
+                        {subStatus ? (SUB_STATUS_LABELS[subStatus as TrackSubStatus17] || subStatus) : '-'}
                       </td>
-                      <td className="py-4 px-5 text-sm text-slate-400 max-w-[420px] truncate">
-                        {lastEvent ? `${lastEvent.timestamp} ${lastEvent.description}` : '-'}
-                      </td>
-                      <td className="py-4 px-5">
-                        <button
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
-                          onClick={() => setTrackingOrder(o)}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          查看轨迹
-                        </button>
-                      </td>
+                      <td className="py-4 px-5 text-slate-500 whitespace-nowrap">{o.shipDate || '-'}</td>
+                      <td className="py-4 px-5 text-slate-500 whitespace-nowrap">{o.actualDays != null ? o.actualDays : '-'}</td>
                     </tr>
                   )
                 })}
@@ -657,11 +566,11 @@ export default function Exceptions() {
           </div>
         )}
 
-        {displayOrders.length > 0 && (
+        {!loading && ordersTotal > 0 && (
           <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-50">
             <div className="flex items-center gap-3">
               <span className="text-xs text-slate-400">
-                共 <span className="font-medium text-slate-600">{displayOrders.length}</span> 条
+                共 <span className="font-medium text-slate-600">{ordersTotal}</span> 条
               </span>
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-slate-400">每页</span>
@@ -698,7 +607,6 @@ export default function Exceptions() {
         )}
       </div>
 
-      {/* 查看轨迹模态框 */}
       {trackingOrder && (
         <>
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setTrackingOrder(null)} />
@@ -724,19 +632,11 @@ export default function Exceptions() {
                     <span className="text-slate-400">追踪号：</span>
                     <div className="flex items-center gap-2">
                       <span className="text-slate-900 font-mono text-xs">{trackingOrder.trackingNumber}</span>
-                      <button
-                        className="p-1 rounded hover:bg-slate-100 transition-colors"
-                        onClick={() => { navigator.clipboard.writeText(trackingOrder.trackingNumber) }}
-                        title="复制追踪号"
-                      >
-                        <Copy className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
-                      </button>
                       <a
                         href={`https://t.17track.net/en#nums=${trackingOrder.trackingNumber}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-1 rounded hover:bg-blue-50 transition-colors"
-                        title="在17track中查询"
                       >
                         <ExternalLink className="w-3.5 h-3.5 text-blue-400 hover:text-blue-600" />
                       </a>
