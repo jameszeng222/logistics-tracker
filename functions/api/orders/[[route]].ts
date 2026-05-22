@@ -177,9 +177,9 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
     }
 
     if (method === 'DELETE') {
-      const parts = url.pathname.split('/')
+      const parts = url.pathname.split('/').filter(Boolean)
       const lastPart = parts[parts.length - 1]
-      if (!lastPart || lastPart === 'orders') {
+      if (!lastPart || lastPart === 'orders' || lastPart === 'clear' || lastPart === 'count' || lastPart === 'filters' || lastPart === 'tracking-list' || lastPart === 'lookup') {
         return Response.json({ success: false, error: 'Order ID required' }, { status: 400, headers: corsHeaders })
       }
       await db.prepare('DELETE FROM orders WHERE id = ?').bind(lastPart).run()

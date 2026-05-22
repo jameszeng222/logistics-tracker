@@ -20,10 +20,14 @@ export default function OtherSettings() {
     setClearing(true)
     setClearResult(null)
     try {
-      const deleted = await clearAllOrdersFromD1()
-      setOrderCount(0)
+      const result = await clearAllOrdersFromD1()
       setShowConfirm(false)
-      setClearResult({ success: true, message: `已成功清空 ${deleted} 条订单数据` })
+      if (result.remaining > 0) {
+        setClearResult({ success: false, message: `清空不完整，已删除 ${result.deleted} 条，剩余 ${result.remaining} 条` })
+      } else {
+        setOrderCount(0)
+        setClearResult({ success: true, message: `已成功清空 ${result.deleted} 条订单数据` })
+      }
       refreshCount()
     } catch (err: any) {
       setClearResult({ success: false, message: err.message || '清空失败' })
