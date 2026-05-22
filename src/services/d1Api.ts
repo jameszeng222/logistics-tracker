@@ -4,9 +4,10 @@ const API_BASE = '/api/orders'
 const STATS_BASE = '/api/orders/stats'
 
 function orderToRow(o: LogisticsOrder): Record<string, any> {
+  const id = `TN-${o.trackingNumber}`
   return {
-    id: o.orderId,
-    orderId: o.orderId,
+    id,
+    orderId: id,
     trackingNumber: o.trackingNumber,
     carrier: o.carrier,
     carrierCode: o.syncMeta?.carrierCode ?? null,

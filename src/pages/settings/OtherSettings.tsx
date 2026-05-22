@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Trash2, AlertTriangle, Info, Ship, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { Trash2, AlertTriangle, Info, Ship, CheckCircle2, AlertCircle, Loader2, Copy } from 'lucide-react'
 import { getOrderCountFromD1, clearAllOrdersFromD1 } from '@/services/d1Api'
 
 export default function OtherSettings() {
@@ -7,6 +7,8 @@ export default function OtherSettings() {
   const [orderCount, setOrderCount] = useState(0)
   const [clearing, setClearing] = useState(false)
   const [clearResult, setClearResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [deduping, setDeduping] = useState(false)
+  const [dedupResult, setDedupResult] = useState<{ success: boolean; message: string } | null>(null)
 
   const refreshCount = () => {
     getOrderCountFromD1().then(setOrderCount)
@@ -34,6 +36,29 @@ export default function OtherSettings() {
       refreshCount()
     } finally {
       setClearing(false)
+    }
+  }
+
+  const handleDedup = async () => {
+    setDeduping(true)
+    setDedupResult(null)
+    try {
+      const res = await fetch('/api/orders/dedup', { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        const parts = []
+        if (data.deletedOldFormat > 0) parts.push(`删除旧格式重复 ${data.deletedOldFormat} 条`)
+        if (data.deletedDuplicates > 0) parts.push(`合并同号重复 ${data.deletedDuplicates} 条`)
+        if (parts.length === 0) parts.push('未发现重复数据')
+        setDedupResult({ success: true, message: `${parts.join('，')}，当前共 ${data.totalInDb} 条` })
+      } else {
+        setDedupResult({ success: false, message: data.error || '去重失败' })
+      }
+      refreshCount()
+    } catch (err: any) {
+      setDedupResult({ success: false, message: err.message || '去重失败' })
+    } finally {
+      setDeduping(false)
     }
   }
 
@@ -109,6 +134,42 @@ export default function OtherSettings() {
               </button>
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-2xl">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+            <Copy className="w-5 h-5 text-blue-500" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">数据去重</h3>
+            <p className="text-xs text-slate-400">清理旧格式重复数据，合并同一快递单号的多条记录</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500">
+            当前共有 <span className="font-medium text-slate-700">{orderCount}</span> 条订单数据
+          </p>
+
+          {dedupResult && (
+            <div className={`flex items-center gap-2 p-3 rounded-xl border ${dedupResult.success ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+              {dedupResult.success
+                ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                : <AlertCircle className="w-4 h-4 text-red-500" />}
+              <span className={`text-xs ${dedupResult.success ? 'text-emerald-600' : 'text-red-500'}`}>{dedupResult.message}</span>
+            </div>
+          )}
+
+          <button
+            className="btn-secondary flex items-center gap-2 text-blue-500 border-blue-200 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600"
+            onClick={handleDedup}
+            disabled={deduping}
+          >
+            {deduping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+            {deduping ? '去重中...' : '执行去重'}
+          </button>
         </div>
       </div>
 

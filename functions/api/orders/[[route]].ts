@@ -121,7 +121,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       } catch {}
 
       const stmts = body.orders.map((o: any) => {
-        const id = o.id || o.orderId
+        const id = o.trackingNumber ? `TN-${o.trackingNumber}` : (o.id || o.orderId)
         const events = typeof o.events === 'string' ? o.events : JSON.stringify(o.events || [])
         const syncMeta = typeof o.syncMeta === 'string' ? o.syncMeta : JSON.stringify(o.syncMeta || {})
         const erpInfo = o.erpInfo || {}

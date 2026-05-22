@@ -40,7 +40,7 @@ ON CONFLICT(id) DO UPDATE SET
 function buildStmt(db: D1Database, r: Record<string, string>) {
   const orderNo = String(r.orderNo || '').trim()
   const trackingNumber = String(r.trackingNumber || '').trim()
-  const id = `ERP-${orderNo}`
+  const id = `TN-${trackingNumber}`
   return db.prepare(UPSERT_SQL).bind(
     id,
     id,
