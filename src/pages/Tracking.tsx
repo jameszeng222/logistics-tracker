@@ -51,7 +51,7 @@ function getSlaDays(order: LogisticsOrder): number {
 function exportToCSV(orders: LogisticsOrder[], filename: string) {
   const BOM = '\uFEFF'
   const headers = [
-    '订单号', '追踪号', '承运商', '目的地', '目的国家',
+    '订单号', '追踪号', '承运商', '物流服务商', '渠道', '目的地', '目的国家',
     '主状态', '发货仓库', '发货团队',
     'ERP出库时间', '签收时间', '实际时效(天)', '达标时效(天)',
   ]
@@ -62,6 +62,8 @@ function exportToCSV(orders: LogisticsOrder[], filename: string) {
       o.orderId,
       o.trackingNumber,
       o.carrier,
+      o.erpInfo?.logisticsProviderDisplayName || '',
+      o.erpInfo?.currentChannel || '',
       o.destination,
       o.destinationCountry,
       STATUS_LABELS[o.status],
@@ -237,7 +239,7 @@ export default function Tracking() {
       return {
         orderId: `ERP-${row.orderNo}`,
         trackingNumber: row.trackingNumber,
-        carrier: row.logisticsProviderDisplayName || row.logisticsProvider || '未知',
+        carrier: row.logisticsProvider || row.logisticsProviderDisplayName || '未知',
         origin: '',
         destination: '',
         destinationCountry: row.destinationCountry || '',
@@ -263,7 +265,8 @@ export default function Tracking() {
           logisticsProviderDisplayName: row.logisticsProviderDisplayName,
           currentChannel: row.currentChannel,
           trackingNumber: row.trackingNumber,
-          warehouse: row.warehouseCode,
+          shippedAt: row.checkoutTime || '',
+          warehouse: row.warehouseCode || '',
         },
         syncMeta: {
           source: 'csv_import' as const,
@@ -452,9 +455,11 @@ export default function Tracking() {
                   <th className="text-left px-5 py-3.5 font-medium">订单号</th>
                   <th className="text-left px-5 py-3.5 font-medium">追踪号</th>
                   <th className="text-left px-5 py-3.5 font-medium">承运商</th>
+                  <th className="text-left px-5 py-3.5 font-medium">物流服务商</th>
                   <th className="text-left px-5 py-3.5 font-medium">目的地</th>
                   <th className="text-left px-5 py-3.5 font-medium">状态</th>
                   <th className="text-left px-5 py-3.5 font-medium">出库时间</th>
+                  <th className="text-left px-5 py-3.5 font-medium">渠道</th>
                   <th className="text-left px-5 py-3.5 font-medium">实际时效</th>
                   <th className="text-left px-5 py-3.5 font-medium">达标时效</th>
                   <th className="text-center px-5 py-3.5 font-medium">操作</th>
@@ -474,9 +479,11 @@ export default function Tracking() {
                       <td className="px-5 py-3.5 font-medium text-slate-800">{o.orderId}</td>
                       <td className="px-5 py-3.5 text-slate-400 font-mono text-xs">{o.trackingNumber}</td>
                       <td className="px-5 py-3.5 text-slate-500">{o.carrier}</td>
+                      <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.logisticsProviderDisplayName || o.erpInfo?.logisticsProvider || '-'}</td>
                       <td className="px-5 py-3.5 text-slate-500">{o.destination}</td>
                       <td className="px-5 py-3.5"><StatusBadge status={o.status} /></td>
                       <td className="px-5 py-3.5 text-slate-400 text-xs">{o.erpInfo?.shippedAt || o.shipDate || '-'}</td>
+                      <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.currentChannel || '-'}</td>
                       <td className="px-5 py-3.5">
                         {actual !== null ? (
                           <span className={`font-medium ${isSlaOk ? 'text-emerald-500' : 'text-red-500'}`}>{actual}天</span>
@@ -500,7 +507,7 @@ export default function Tracking() {
                 })}
                 {paged.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center py-20 text-slate-300">
+                    <td colSpan={11} className="text-center py-20 text-slate-300">
                       <div className="flex flex-col items-center gap-2">
                         <Search className="w-8 h-8 text-slate-200" />
                         <span>暂无匹配订单</span>
@@ -583,6 +590,14 @@ export default function Tracking() {
                 <DetailRow label="重量" value={`${selectedOrder.weight}kg`} />
                 {selectedOrder.erpInfo?.warehouse && <DetailRow label="仓库" value={selectedOrder.erpInfo.warehouse} />}
                 {selectedOrder.erpInfo?.team && <DetailRow label="团队" value={selectedOrder.erpInfo.team} />}
+                {selectedOrder.erpInfo?.logisticsProvider && <DetailRow label="物流服务商" value={selectedOrder.erpInfo.logisticsProvider} />}
+                {selectedOrder.erpInfo?.logisticsProviderDisplayName && <DetailRow label="C端物流商" value={selectedOrder.erpInfo.logisticsProviderDisplayName} />}
+                {selectedOrder.erpInfo?.currentChannel && <DetailRow label="当前渠道" value={selectedOrder.erpInfo.currentChannel} />}
+                {selectedOrder.erpInfo?.platform && <DetailRow label="平台" value={selectedOrder.erpInfo.platform} />}
+                {selectedOrder.erpInfo?.shippingQty !== undefined && <DetailRow label="发货数量" value={String(selectedOrder.erpInfo.shippingQty)} />}
+                {selectedOrder.erpInfo?.paymentTime && <DetailRow label="支付时间" value={selectedOrder.erpInfo.paymentTime} />}
+                {selectedOrder.erpInfo?.packingTime && <DetailRow label="打包时间" value={selectedOrder.erpInfo.packingTime} />}
+                {selectedOrder.erpInfo?.checkoutTime && <DetailRow label="签出时间" value={selectedOrder.erpInfo.checkoutTime} />}
                 <div className="flex items-center justify-between py-1.5">
                   <span className="text-xs text-slate-400">状态</span>
                   <StatusBadge status={selectedOrder.status} />

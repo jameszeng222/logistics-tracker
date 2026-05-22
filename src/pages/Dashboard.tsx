@@ -123,7 +123,7 @@ export default function Dashboard() {
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-slate-200/80 p-6 animate-fade-in-up" style={{ animationDelay: '360ms' }}>
           <h3 className="text-sm font-semibold text-slate-800 mb-5">状态分布</h3>
           {statusDistribution.length === 0 ? (
@@ -188,7 +188,9 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+      </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-slate-200/80 p-6 animate-fade-in-up" style={{ animationDelay: '480ms' }}>
           <h3 className="text-sm font-semibold text-slate-800 mb-5">目的国家占比</h3>
           {countryPieData.length === 0 ? (
@@ -224,26 +226,26 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-slate-200/80 p-6 animate-fade-in-up" style={{ animationDelay: '540ms' }}>
           <h3 className="text-sm font-semibold text-slate-800 mb-5">各国家平均时效</h3>
           {countryData.length === 0 ? (
             <div className="flex items-center justify-center h-[260px] text-slate-300 text-sm">暂无数据</div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={countryData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }} layout="vertical">
+              <BarChart data={countryData} margin={{ top: 20, right: 20, left: 0, bottom: 5 }} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
                 <XAxis type="number" tick={{ fill: '#94A3B8', fontSize: 12 }} axisLine={false} tickLine={false} unit="天" />
                 <YAxis type="category" dataKey="country" tick={{ fill: '#64748B', fontSize: 12 }} axisLine={false} tickLine={false} width={70} />
                 <Tooltip content={<LightTooltip />} />
-                <Bar dataKey="avg" name="平均时效(天)" radius={[0, 6, 6, 0]} maxBarSize={24} fill={BLUE} fillOpacity={0.8} />
+                <Bar dataKey="avg" name="平均时效(天)" radius={[0, 6, 6, 0]} maxBarSize={24} fill={BLUE} fillOpacity={0.8} label={{ position: 'top', fill: '#3B82F6', fontSize: 11, fontWeight: 600 }} />
               </BarChart>
             </ResponsiveContainer>
           )}
         </div>
+      </div>
 
+      <div className="grid grid-cols-1 gap-6">
         <div className="bg-white rounded-2xl border border-slate-200/80 p-6 animate-fade-in-up" style={{ animationDelay: '600ms' }}>
           <h3 className="text-sm font-semibold text-slate-800 mb-5">SLA达标率（按国家）</h3>
           {slaCountryData.length === 0 ? (

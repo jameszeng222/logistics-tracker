@@ -7,7 +7,7 @@ import {
 import dayjs from 'dayjs'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid, Legend, Cell,
+  ResponsiveContainer, CartesianGrid, Legend, Cell, ReferenceLine,
 } from 'recharts'
 import { useLogisticsStore } from '@/store/logisticsStore'
 import { calculateMetrics } from '@/utils/metricsCalculator'
@@ -280,6 +280,24 @@ export default function DeliveryDashboard() {
     return { carrierList, countryList, matrix }
   }, [filteredOrders, rules])
 
+  const isSingleCountry = !!countryFilter && countryFilter !== '*'
+
+  const singleCountryData = useMemo(() => {
+    if (!isSingleCountry) return []
+    return p90Matrix.carrierList
+      .map((carrier) => {
+        const cell = p90Matrix.matrix[carrier]?.[countryFilter]
+        if (!cell || cell.count === 0) return null
+        return {
+          channel: carrier,
+          p90: Number(cell.p90.toFixed(1)),
+          slaDays: cell.slaDays,
+        }
+      })
+      .filter((d): d is { channel: string; p90: number; slaDays: number | null } => d !== null)
+      .sort((a, b) => b.p90 - a.p90)
+  }, [p90Matrix, countryFilter, isSingleCountry])
+
   const transitBucketData = useMemo(() => {
     const buckets: Record<string, Record<string, number>> = {}
     for (const o of filteredOrders) {
@@ -294,16 +312,24 @@ export default function DeliveryDashboard() {
       buckets[country][getBucket(days)]++
     }
     return Object.entries(buckets)
-      .map(([country, b]) => ({
-        country: getCountryName(country),
-        le2: b.le2,
-        d3: b.d3,
-        d4_5: b.d4_5,
-        d6_7: b.d6_7,
-        d8_10: b.d8_10,
-        gt10: b.gt10,
-      }))
-      .sort((a, b) => (b.le2 + b.d3 + b.d4_5 + b.d6_7 + b.d8_10 + b.gt10) - (a.le2 + a.d3 + a.d4_5 + a.d6_7 + a.d8_10 + a.gt10))
+      .sort(([, a], [, b]) => {
+        const totalA = a.le2 + a.d3 + a.d4_5 + a.d6_7 + a.d8_10 + a.gt10
+        const totalB = b.le2 + b.d3 + b.d4_5 + b.d6_7 + b.d8_10 + b.gt10
+        return totalB - totalA
+      })
+      .map(([country, b]) => {
+        const total = b.le2 + b.d3 + b.d4_5 + b.d6_7 + b.d8_10 + b.gt10
+        const pct = (v: number) => total > 0 ? Math.round(v / total * 1000) / 10 : 0
+        return {
+          country: getCountryName(country),
+          le2: pct(b.le2),
+          d3: pct(b.d3),
+          d4_5: pct(b.d4_5),
+          d6_7: pct(b.d6_7),
+          d8_10: pct(b.d8_10),
+          gt10: pct(b.gt10),
+        }
+      })
   }, [filteredOrders])
 
   const carrierCompareData = useMemo(() => {
@@ -545,10 +571,27 @@ export default function DeliveryDashboard() {
             <p className="text-[11px] text-slate-400">单元格显示P90时效（90%订单在X天内签收），绿色=达标，红色=未达标</p>
           </div>
         </div>
-        {p90Matrix.carrierList.length === 0 || p90Matrix.countryList.length === 0 ? (
+        {p90Matrix.carrierList.length === 0 || (isSingleCountry ? singleCountryData.length === 0 : p90Matrix.countryList.length === 0) ? (
           <div className="py-16 text-center">
             <ShieldCheck className="w-10 h-10 text-slate-200 mx-auto mb-3" />
             <p className="text-sm text-slate-400">暂无数据</p>
+          </div>
+        ) : isSingleCountry ? (
+          <div className="px-4 py-4">
+            <ResponsiveContainer width="100%" height={singleCountryData.length * 45 + 40}>
+              <BarChart data={singleCountryData} layout="vertical" margin={{ left: 80, right: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis type="number" unit="天" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="channel" tick={{ fontSize: 12 }} width={75} />
+                <Tooltip />
+                {[...new Set(singleCountryData.map(d => d.slaDays).filter((v): v is number => v !== null))].map(sla => (
+                  <ReferenceLine key={sla} x={sla} stroke="#EF4444" strokeDasharray="3 3" label={{ value: `SLA ${sla}天`, position: 'top', fill: '#EF4444', fontSize: 10 }} />
+                ))}
+                <Bar dataKey="p90" name="P90达标时效" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={20}
+                  label={{ position: 'right', fill: '#3B82F6', fontSize: 11, fontWeight: 600, formatter: (v: number) => `${v}天` }}
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -748,14 +791,14 @@ export default function DeliveryDashboard() {
                 <BarChart data={transitBucketData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
                   <XAxis dataKey="country" tick={{ fontSize: 11, fill: '#64748B' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748B' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#64748B' }} unit="%" />
                   <Tooltip
                     contentStyle={{ borderRadius: 12, border: '1px solid #E2E8F0', fontSize: 12 }}
-                    formatter={(value: number, name: string) => [value, BUCKET_LABELS[BUCKET_KEYS.indexOf(name as typeof BUCKET_KEYS[number])] || name]}
+                    formatter={(value: number, name: string) => [`${value}%`, BUCKET_LABELS[BUCKET_KEYS.indexOf(name as typeof BUCKET_KEYS[number])] || name]}
                   />
                   <Legend formatter={(value: string) => BUCKET_LABELS[BUCKET_KEYS.indexOf(value as typeof BUCKET_KEYS[number])] || value} />
                   {BUCKET_KEYS.map((key, i) => (
-                    <Bar key={key} dataKey={key} stackId="a" fill={BUCKET_COLORS[i]} radius={i === BUCKET_KEYS.length - 1 ? [4, 4, 0, 0] : undefined} />
+                    <Bar key={key} dataKey={key} stackId="a" fill={BUCKET_COLORS[i]} radius={i === BUCKET_KEYS.length - 1 ? [4, 4, 0, 0] : undefined} label={{ position: 'center', fill: '#fff', fontSize: 10, fontWeight: 600, formatter: (v: number) => v > 5 ? `${v}%` : '' }} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
