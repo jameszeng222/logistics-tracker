@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Upload, X, FileDown, CheckCircle, AlertCircle } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 export interface ParsedFulfillmentRow {
   orderNo: string
@@ -23,7 +24,7 @@ interface FulfillmentImporterProps {
   onImport: (rows: ParsedFulfillmentRow[]) => void
 }
 
-const CSV_HEADERS = [
+const XLSX_HEADERS = [
   '履约单号', '仓库代码', '平台', '发货数量', '目的国家',
   '支付时间', '创建时间', '打包时间', '签出时间',
   '物流服务商', 'C端显示物流服务商名称', '当前渠道', '快递单号',
@@ -45,22 +46,40 @@ const HEADER_MAP: Record<string, keyof ParsedFulfillmentRow> = {
   '快递单号': 'trackingNumber',
 }
 
-function normalizeDate(value: string): string {
-  const trimmed = value.trim()
+function normalizeDate(value: unknown): string {
+  if (!value) return ''
+  if (typeof value === 'number') {
+    const date = XLSX.SSF.parse_date_code(value)
+    if (date) {
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const str = `${date.y}-${pad(date.m)}-${pad(date.d)}`
+      if (date.H || date.M || date.S) {
+        return `${str} ${pad(date.H)}:${pad(date.M)}${date.S ? ':' + pad(date.S) : ''}`
+      }
+      return str
+    }
+    return ''
+  }
+  const trimmed = String(value).trim()
   if (!trimmed) return ''
   const withSpace = trimmed.replace(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}:\d{2}(?::\d{2})?)/, '$1-$2-$3 $4')
   const slashToDash = withSpace.replace(/(\d{4})\/(\d{1,2})\/(\d{1,2})/, '$1-$2-$3')
   return slashToDash
 }
 
-function parseCSV(text: string): {
+function parseXlsx(buffer: ArrayBuffer): {
   rows: ParsedFulfillmentRow[]
   errors: { row: number; reason: string }[]
 } {
-  const lines = text.split(/\r?\n/)
-  if (lines.length === 0) return { rows: [], errors: [] }
+  const workbook = XLSX.read(buffer, { type: 'array' })
+  const sheetName = workbook.SheetNames[0]
+  if (!sheetName) return { rows: [], errors: [{ row: 1, reason: '工作表为空' }] }
+  const sheet = workbook.Sheets[sheetName]
+  const jsonData: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
 
-  const headers = lines[0].split(',').map((h) => h.trim().replace(/^\uFEFF/, ''))
+  if (jsonData.length === 0) return { rows: [], errors: [] }
+
+  const headers = (jsonData[0] as unknown[]).map((h) => String(h).trim())
   const requiredHeaders = ['履约单号', '快递单号']
   const missingHeaders = requiredHeaders.filter((h) => !headers.includes(h))
   if (missingHeaders.length > 0) {
@@ -70,18 +89,18 @@ function parseCSV(text: string): {
   const rows: ParsedFulfillmentRow[] = []
   const errors: { row: number; reason: string }[] = []
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line) continue
+  for (let i = 1; i < jsonData.length; i++) {
+    const values = jsonData[i] as unknown[]
+    const allEmpty = values.every((v) => v === '' || v === null || v === undefined)
+    if (allEmpty) continue
 
-    const values = line.split(',')
-    const record: Record<string, string> = {}
+    const record: Record<string, unknown> = {}
     headers.forEach((h, idx) => {
-      record[h] = (values[idx] || '').trim()
+      record[h] = values[idx] ?? ''
     })
 
-    const orderNo = record['履约单号']
-    const trackingNumber = record['快递单号']
+    const orderNo = String(record['履约单号'] || '').trim()
+    const trackingNumber = String(record['快递单号'] || '').trim()
 
     if (!orderNo || !trackingNumber) {
       errors.push({ row: i + 1, reason: `履约单号或快递单号为空` })
@@ -90,21 +109,21 @@ function parseCSV(text: string): {
 
     const shippingQtyRaw = record['发货数量']
     const shippingQty = Number(shippingQtyRaw)
-    const isValidQty = !isNaN(shippingQty) && shippingQtyRaw.trim() !== ''
+    const isValidQty = !isNaN(shippingQty) && shippingQtyRaw !== '' && shippingQtyRaw !== null && shippingQtyRaw !== undefined
 
     const row: ParsedFulfillmentRow = {
       orderNo,
-      warehouseCode: record['仓库代码'] || '',
-      platform: record['平台'] || '',
+      warehouseCode: String(record['仓库代码'] || '').trim(),
+      platform: String(record['平台'] || '').trim(),
       shippingQty: isValidQty ? shippingQty : 0,
-      destinationCountry: record['目的国家'] || '',
-      paymentTime: normalizeDate(record['支付时间'] || ''),
-      createdAt: normalizeDate(record['创建时间'] || ''),
-      packingTime: normalizeDate(record['打包时间'] || ''),
-      checkoutTime: normalizeDate(record['签出时间'] || ''),
-      logisticsProvider: record['物流服务商'] || '',
-      logisticsProviderDisplayName: record['C端显示物流服务商名称'] || '',
-      currentChannel: record['当前渠道'] || '',
+      destinationCountry: String(record['目的国家'] || '').trim(),
+      paymentTime: normalizeDate(record['支付时间']),
+      createdAt: normalizeDate(record['创建时间']),
+      packingTime: normalizeDate(record['打包时间']),
+      checkoutTime: normalizeDate(record['签出时间']),
+      logisticsProvider: String(record['物流服务商'] || '').trim(),
+      logisticsProviderDisplayName: String(record['C端显示物流服务商名称'] || '').trim(),
+      currentChannel: String(record['当前渠道'] || '').trim(),
       trackingNumber,
     }
 
@@ -135,27 +154,23 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
   }
 
   const downloadTemplate = () => {
-    const bom = '\uFEFF'
-    const csv = bom + CSV_HEADERS.join(',') + '\n'
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = '履约单导入模板.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([XLSX_HEADERS])
+    ws['!cols'] = XLSX_HEADERS.map(() => ({ wch: 18 }))
+    XLSX.utils.book_append_sheet(wb, ws, '履约单导入')
+    XLSX.writeFile(wb, '履约单导入模板.xlsx')
   }
 
   const processFile = (file: File) => {
     setFileName(file.name)
     const reader = new FileReader()
     reader.onload = (e) => {
-      const text = e.target?.result as string
-      const { rows, errors } = parseCSV(text)
+      const buffer = e.target?.result as ArrayBuffer
+      const { rows, errors } = parseXlsx(buffer)
       setParsedRows(rows)
       setParseErrors(errors)
     }
-    reader.readAsText(file, 'utf-8')
+    reader.readAsArrayBuffer(file)
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -194,7 +209,7 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">上传CSV文件导入履约单数据</p>
+            <p className="text-sm text-slate-500">上传 Excel 文件导入履约单数据</p>
             <button
               onClick={downloadTemplate}
               className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
@@ -215,11 +230,11 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
             }`}
           >
             <Upload className={`w-8 h-8 mx-auto mb-3 ${dragActive ? 'text-blue-500' : 'text-slate-300'}`} />
-            <p className="text-sm text-slate-600 mb-1">拖拽CSV文件到此处，或点击选择</p>
-            <p className="text-xs text-slate-400 mb-4">仅支持 CSV 格式</p>
+            <p className="text-sm text-slate-600 mb-1">拖拽 Excel 文件到此处，或点击选择</p>
+            <p className="text-xs text-slate-400 mb-4">支持 .xlsx / .xls 格式</p>
             <label className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-500 text-white text-xs font-medium rounded-lg cursor-pointer hover:bg-blue-600 transition-colors">
               选择文件
-              <input type="file" accept=".csv" onChange={handleFileInput} className="hidden" />
+              <input type="file" accept=".xlsx,.xls" onChange={handleFileInput} className="hidden" />
             </label>
           </div>
 
