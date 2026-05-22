@@ -34,7 +34,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       const timeStart = url.searchParams.get('timeStart')
       const timeEnd = url.searchParams.get('timeEnd')
       const subStatus = url.searchParams.get('subStatus')
-      const limit = Math.min(parseInt(url.searchParams.get('limit') || '5000'), 10000)
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '5000'), 50000)
       const offset = parseInt(url.searchParams.get('offset') || '0')
 
       const conditions: string[] = []

@@ -144,9 +144,21 @@ export const useLogisticsStore = create<LogisticsStore>()(
 
   loadFromD1: async () => {
     try {
-      const result = await fetchOrdersFromD1({ limit: 10000 })
-      if (result.orders.length > 0) {
-        set({ orders: result.orders })
+      const allOrders: LogisticsOrder[] = []
+      let offset = 0
+      const pageSize = 5000
+      let hasMore = true
+      while (hasMore) {
+        const result = await fetchOrdersFromD1({ limit: pageSize, offset })
+        allOrders.push(...result.orders)
+        if (result.orders.length < pageSize) {
+          hasMore = false
+        } else {
+          offset += pageSize
+        }
+      }
+      if (allOrders.length > 0) {
+        set({ orders: allOrders })
       }
     } catch {
     }
@@ -160,21 +172,53 @@ export const useLogisticsStore = create<LogisticsStore>()(
   }),
 
   mergeOrders: (incoming) => set((state) => {
-    const incomingMap = new Map<string, LogisticsOrder>(incoming.map((o) => [o.orderId, o]))
-    const merged = state.orders.map((o) => {
-      const inc = incomingMap.get(o.orderId)
-      if (inc) {
-        incomingMap.delete(o.orderId)
-        const incIsNewer = inc.syncMeta?.lastSyncAt && o.syncMeta?.lastSyncAt
-          ? inc.syncMeta.lastSyncAt > o.syncMeta.lastSyncAt
-          : !!inc.syncMeta?.lastSyncAt
-        return incIsNewer ? { ...o, ...inc, orderId: o.orderId } : o
-      }
-      return o
+    const existingByTracking = new Map<string, LogisticsOrder>()
+    state.orders.forEach((o) => {
+      const key = o.trackingNumber || o.orderId
+      if (key) existingByTracking.set(key, o)
     })
-    const newOrders = [...incomingMap.values()]
-    const allMerged = [...merged, ...newOrders]
-    upsertOrdersToD1(incoming).catch(() => {})
+    const existingByOrderNo = new Map<string, LogisticsOrder>()
+    state.orders.forEach((o) => {
+      if (o.erpInfo?.orderNo) existingByOrderNo.set(o.erpInfo.orderNo, o)
+    })
+
+    const merged = [...state.orders]
+    const toAdd: LogisticsOrder[] = []
+    const updatedIds = new Set<string>()
+
+    for (const inc of incoming) {
+      const byTracking = inc.trackingNumber ? existingByTracking.get(inc.trackingNumber) : null
+      const byOrderNo = inc.erpInfo?.orderNo ? existingByOrderNo.get(inc.erpInfo.orderNo) : null
+      const existing = byTracking || byOrderNo
+
+      if (existing) {
+        const idx = merged.findIndex((o) => o.orderId === existing.orderId)
+        if (idx !== -1 && !updatedIds.has(existing.orderId)) {
+          const incIsNewer = inc.syncMeta?.lastSyncAt && existing.syncMeta?.lastSyncAt
+            ? inc.syncMeta.lastSyncAt > existing.syncMeta.lastSyncAt
+            : !!inc.syncMeta?.lastSyncAt
+          if (incIsNewer) {
+            merged[idx] = {
+              ...existing,
+              ...inc,
+              orderId: existing.orderId,
+              erpInfo: { ...existing.erpInfo, ...inc.erpInfo },
+            }
+          } else {
+            merged[idx] = {
+              ...existing,
+              erpInfo: { ...inc.erpInfo, ...existing.erpInfo },
+            }
+          }
+          updatedIds.add(existing.orderId)
+        }
+      } else {
+        toAdd.push(inc)
+      }
+    }
+
+    const allMerged = [...merged, ...toAdd]
+    upsertOrdersToD1(allMerged).catch(() => {})
     return { orders: allMerged }
   }),
 
@@ -561,6 +605,7 @@ export const useLogisticsStore = create<LogisticsStore>()(
     {
       name: 'logistics-store',
       partialize: (state) => ({
+        orders: state.orders,
         track17Config: {
           apiKey: state.track17Config.apiKey,
           connected: state.track17Config.connected,
@@ -570,15 +615,15 @@ export const useLogisticsStore = create<LogisticsStore>()(
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<LogisticsStore>
-        if (!p.track17Config) return current
         return {
           ...current,
+          ...(p.orders && p.orders.length > 0 ? { orders: p.orders } : {}),
           track17Config: {
             ...current.track17Config,
-            apiKey: p.track17Config.apiKey || '',
-            connected: p.track17Config.connected || false,
-            lastSync: p.track17Config.lastSync || null,
-            autoSync: p.track17Config.autoSync || false,
+            apiKey: p.track17Config?.apiKey || '',
+            connected: p.track17Config?.connected || false,
+            lastSync: p.track17Config?.lastSync || null,
+            autoSync: p.track17Config?.autoSync || false,
           },
         }
       },

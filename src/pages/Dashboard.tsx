@@ -232,15 +232,28 @@ export default function Dashboard() {
           {countryData.length === 0 ? (
             <div className="flex items-center justify-center h-[260px] text-slate-300 text-sm">暂无数据</div>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={countryData} margin={{ top: 20, right: 20, left: 0, bottom: 5 }} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
-                <XAxis type="number" tick={{ fill: '#94A3B8', fontSize: 12 }} axisLine={false} tickLine={false} unit="天" />
-                <YAxis type="category" dataKey="country" tick={{ fill: '#64748B', fontSize: 12 }} axisLine={false} tickLine={false} width={70} />
-                <Tooltip content={<LightTooltip />} />
-                <Bar dataKey="avg" name="平均时效(天)" radius={[0, 6, 6, 0]} maxBarSize={24} fill={BLUE} fillOpacity={0.8} label={{ position: 'top', fill: '#3B82F6', fontSize: 11, fontWeight: 600 }} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="space-y-3">
+              {countryData.map((d) => {
+                const maxAvg = Math.max(...countryData.map((x) => x.avg), 1)
+                const pct = Math.min((d.avg / maxAvg) * 100, 100)
+                return (
+                  <div key={d.country} className="flex items-center gap-3">
+                    <span className="text-xs text-slate-600 w-20 flex-shrink-0 truncate">{d.country}</span>
+                    <div className="flex-1 h-6 bg-slate-50 rounded-lg overflow-hidden relative">
+                      <div
+                        className="h-full rounded-lg transition-all duration-500"
+                        style={{
+                          width: `${pct}%`,
+                          backgroundColor: d.avg <= 7 ? '#3B82F6' : d.avg <= 14 ? '#F59E0B' : '#EF4444',
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-700 w-14 text-right">{d.avg.toFixed(1)}天</span>
+                    <span className="text-[10px] text-slate-400 w-12 text-right">{d.count}单</span>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       </div>

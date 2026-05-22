@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import {
   Search, X, Truck, PackageCheck, Clock, Info,
   Package, AlertTriangle, HelpCircle,
-  RotateCcw, PackageX, Download, Eye,
+  RotateCcw, PackageX, Download, Eye, ExternalLink,
   FileSpreadsheet, Calendar, Copy,
   Warehouse, Users, Globe, Filter,
   ChevronLeft, ChevronRight,
@@ -731,6 +731,15 @@ export default function Exceptions() {
                       >
                         <Copy className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
                       </button>
+                      <a
+                        href={`https://t.17track.net/en#nums=${trackingOrder.trackingNumber}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 rounded hover:bg-blue-50 transition-colors"
+                        title="在17track中查询"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-blue-400 hover:text-blue-600" />
+                      </a>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

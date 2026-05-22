@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import {
   Search, RotateCcw, Eye, X, ChevronLeft, ChevronRight,
   MapPin, AlertTriangle, Calendar, Truck, RefreshCw, Download,
-  FileDown, ChevronDown, Upload, Copy,
+  FileDown, ChevronDown, Upload, Copy, ExternalLink,
 } from 'lucide-react'
 import FulfillmentImporter, { type ParsedFulfillmentRow } from '@/components/FulfillmentImporter'
 import dayjs from 'dayjs'
@@ -613,6 +613,15 @@ export default function Tracking() {
                     >
                       <Copy className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
                     </button>
+                    <a
+                      href={`https://t.17track.net/en#nums=${selectedOrder.trackingNumber}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 rounded hover:bg-blue-50 transition-colors"
+                      title="在17track中查询"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-blue-400 hover:text-blue-600" />
+                    </a>
                   </div>
                 </div>
                 <DetailRow label="承运商" value={selectedOrder.carrier} icon={<Truck className="w-3.5 h-3.5" />} />
