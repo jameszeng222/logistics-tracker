@@ -23,82 +23,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
   const db = ctx.env.DB
 
   try {
-    if (url.pathname === '/api/orders/tracking-list' && method === 'GET') {
-      const rows = await db.prepare(
-        `SELECT tracking_number, carrier_code FROM orders WHERE tracking_number != '' ORDER BY updated_at DESC`
-      ).all()
-      const items = rows.results.map((r: any) => ({
-        trackingNumber: r.tracking_number,
-        carrierCode: r.carrier_code,
-      }))
-      return Response.json({ success: true, items }, { headers: corsHeaders })
-    }
-
-    if (url.pathname === '/api/orders/lookup' && method === 'POST') {
-      const body = await ctx.request.json() as { trackingNumbers?: string[]; orderNos?: string[] }
-      const conditions: string[] = []
-      const params: any[] = []
-
-      if (body.trackingNumbers?.length) {
-        const placeholders = body.trackingNumbers.map(() => '?').join(',')
-        conditions.push(`tracking_number IN (${placeholders})`)
-        params.push(...body.trackingNumbers)
-      }
-      if (body.orderNos?.length) {
-        const placeholders = body.orderNos.map(() => '?').join(',')
-        const cond = `erp_order_no IN (${placeholders})`
-        conditions.push(conditions.length > 0 ? `OR ${cond}` : cond)
-        params.push(...body.orderNos)
-      }
-
-      if (conditions.length === 0) {
-        return Response.json({ success: true, orders: [] }, { headers: corsHeaders })
-      }
-
-      const rows = await db.prepare(
-        `SELECT * FROM orders WHERE ${conditions.join(' ')} LIMIT 5000`
-      ).bind(...params).all()
-
-      const orders = rows.results.map((row: any) => ({
-        id: row.id,
-        orderId: row.order_id,
-        trackingNumber: row.tracking_number,
-        carrier: row.carrier || '',
-        carrierCode: row.carrier_code,
-        origin: row.origin || '',
-        destination: row.destination || '',
-        destinationCountry: row.destination_country || '',
-        status: row.status,
-        subStatus: row.sub_status || '',
-        shipDate: row.ship_date || '',
-        deliveryDate: row.delivery_date || '',
-        actualDays: row.actual_days,
-        slaDays: row.sla_days || 20,
-        exception: row.exception_description ? { description: row.exception_description } : undefined,
-        erpInfo: (row.erp_order_no || row.erp_created_at || row.erp_checkout_time || row.erp_warehouse_code || row.erp_logistics_provider) ? {
-          orderNo: row.erp_order_no || '',
-          createdAt: row.erp_created_at || '',
-          shippedAt: row.erp_shipped_at || '',
-          warehouse: row.erp_warehouse || '',
-          team: row.erp_team || '',
-          warehouseCode: row.erp_warehouse_code || '',
-          platform: row.erp_platform || '',
-          shippingQty: row.erp_shipping_qty || 0,
-          paymentTime: row.erp_payment_time || '',
-          packingTime: row.erp_packing_time || '',
-          checkoutTime: row.erp_checkout_time || '',
-          logisticsProvider: row.erp_logistics_provider || '',
-          logisticsProviderDisplayName: row.erp_logistics_provider_display || '',
-          currentChannel: row.erp_current_channel || '',
-        } : undefined,
-        syncMeta: JSON.parse(row.sync_meta || '{}'),
-        events: JSON.parse(row.events || '[]'),
-      }))
-
-      return Response.json({ success: true, orders }, { headers: corsHeaders })
-    }
-
-    if (url.pathname === '/api/orders' && method === 'GET') {
+    if (method === 'GET') {
       const status = url.searchParams.get('status')
       const country = url.searchParams.get('country')
       const carrier = url.searchParams.get('carrier')
@@ -115,43 +40,19 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       const conditions: string[] = []
       const params: any[] = []
 
-      if (status) {
-        conditions.push('status = ?')
-        params.push(status)
-      }
-      if (subStatus) {
-        conditions.push('sub_status = ?')
-        params.push(subStatus)
-      }
-      if (country) {
-        conditions.push('destination_country = ?')
-        params.push(country)
-      }
-      if (carrier) {
-        conditions.push('carrier = ?')
-        params.push(carrier)
-      }
-      if (warehouse) {
-        conditions.push('erp_warehouse = ?')
-        params.push(warehouse)
-      }
-      if (team) {
-        conditions.push('erp_team = ?')
-        params.push(team)
-      }
+      if (status) { conditions.push('status = ?'); params.push(status) }
+      if (subStatus) { conditions.push('sub_status = ?'); params.push(subStatus) }
+      if (country) { conditions.push('destination_country = ?'); params.push(country) }
+      if (carrier) { conditions.push('carrier = ?'); params.push(carrier) }
+      if (warehouse) { conditions.push('erp_warehouse = ?'); params.push(warehouse) }
+      if (team) { conditions.push('erp_team = ?'); params.push(team) }
       if (search) {
         conditions.push('(order_id LIKE ? OR tracking_number LIKE ? OR carrier LIKE ? OR destination LIKE ? OR erp_order_no LIKE ?)')
         const s = `%${search}%`
         params.push(s, s, s, s, s)
       }
-      if (timeStart) {
-        conditions.push(`${timeField} >= ?`)
-        params.push(timeStart)
-      }
-      if (timeEnd) {
-        conditions.push(`${timeField} <= ?`)
-        params.push(timeEnd + ' 23:59:59')
-      }
+      if (timeStart) { conditions.push(`${timeField} >= ?`); params.push(timeStart) }
+      if (timeEnd) { conditions.push(`${timeField} <= ?`); params.push(timeEnd + ' 23:59:59') }
 
       const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
 
@@ -201,7 +102,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       return Response.json({ success: true, orders, total, limit, offset }, { headers: corsHeaders })
     }
 
-    if (url.pathname === '/api/orders' && method === 'POST') {
+    if (method === 'POST') {
       const body = await ctx.request.json() as { orders: any[] }
       if (!body.orders?.length) {
         return Response.json({ success: false, error: 'No orders provided' }, { status: 400, headers: corsHeaders })
@@ -275,38 +176,13 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       return Response.json({ success: true, upserted }, { headers: corsHeaders })
     }
 
-    if (url.pathname === '/api/orders/count' && method === 'GET') {
-      const result = await db.prepare('SELECT COUNT(*) as total FROM orders').first()
-      return Response.json({ success: true, total: (result as any)?.total || 0 }, { headers: corsHeaders })
-    }
-
-    if (url.pathname === '/api/orders/filters' && method === 'GET') {
-      const countries = (await db.prepare('SELECT DISTINCT destination_country FROM orders WHERE destination_country != "" ORDER BY destination_country').all()).results.map((r: any) => r.destination_country)
-      const carriers = (await db.prepare('SELECT DISTINCT carrier FROM orders WHERE carrier != "" ORDER BY carrier').all()).results.map((r: any) => r.carrier)
-      const warehouses = (await db.prepare('SELECT DISTINCT erp_warehouse FROM orders WHERE erp_warehouse != "" ORDER BY erp_warehouse').all()).results.map((r: any) => r.erp_warehouse)
-      const teams = (await db.prepare('SELECT DISTINCT erp_team FROM orders WHERE erp_team != "" ORDER BY erp_team').all()).results.map((r: any) => r.erp_team)
-      const statuses = (await db.prepare('SELECT status, COUNT(*) as count FROM orders GROUP BY status').all()).results
-
-      return Response.json({ success: true, countries, carriers, warehouses, teams, statuses }, { headers: corsHeaders })
-    }
-
-    if (url.pathname === '/api/orders/clear' && method === 'DELETE') {
-      let totalDeleted = 0
-      while (true) {
-        const result = await db.prepare('DELETE FROM orders WHERE rowid IN (SELECT rowid FROM orders LIMIT 5000)').run()
-        const changes = result.meta?.changes || 0
-        totalDeleted += changes
-        if (changes === 0) break
-      }
-      return Response.json({ success: true, message: 'All orders cleared', deleted: totalDeleted }, { headers: corsHeaders })
-    }
-
-    if (url.pathname.match(/^\/api\/orders\//) && method === 'DELETE') {
-      const id = url.pathname.split('/api/orders/')[1]
-      if (!id || id === 'clear') {
+    if (method === 'DELETE') {
+      const parts = url.pathname.split('/')
+      const lastPart = parts[parts.length - 1]
+      if (!lastPart || lastPart === 'orders') {
         return Response.json({ success: false, error: 'Order ID required' }, { status: 400, headers: corsHeaders })
       }
-      await db.prepare('DELETE FROM orders WHERE id = ?').bind(id).run()
+      await db.prepare('DELETE FROM orders WHERE id = ?').bind(lastPart).run()
       return Response.json({ success: true }, { headers: corsHeaders })
     }
 
