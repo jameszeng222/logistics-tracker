@@ -600,6 +600,7 @@ export default function Tracking() {
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
               {/* 基本信息 */}
               <div className="space-y-3">
+                {selectedOrder.erpInfo?.orderNo && <DetailRow label="履约单号" value={selectedOrder.erpInfo.orderNo} />}
                 <DetailRow label="订单号" value={selectedOrder.orderId} />
                 <div className="flex items-center justify-between py-1.5">
                   <span className="text-xs text-slate-400">追踪号</span>
@@ -617,16 +618,19 @@ export default function Tracking() {
                 <DetailRow label="承运商" value={selectedOrder.carrier} icon={<Truck className="w-3.5 h-3.5" />} />
                 <DetailRow label="始发地" value={selectedOrder.origin} />
                 <DetailRow label="目的地" value={selectedOrder.destination} icon={<MapPin className="w-3.5 h-3.5" />} />
+                <DetailRow label="目的国家" value={selectedOrder.destinationCountry} />
                 <DetailRow label="发货日期" value={selectedOrder.shipDate} icon={<Calendar className="w-3.5 h-3.5" />} />
                 {selectedOrder.deliveryDate && <DetailRow label="妥投日期" value={selectedOrder.deliveryDate} />}
                 <DetailRow label="重量" value={`${selectedOrder.weight}kg`} />
-                {selectedOrder.erpInfo?.warehouse && <DetailRow label="仓库" value={selectedOrder.erpInfo.warehouse} />}
+                {selectedOrder.erpInfo?.warehouseCode && <DetailRow label="仓库代码" value={selectedOrder.erpInfo.warehouseCode} />}
+                {selectedOrder.erpInfo?.warehouse && <DetailRow label="发货仓库" value={selectedOrder.erpInfo.warehouse} />}
                 {selectedOrder.erpInfo?.team && <DetailRow label="团队" value={selectedOrder.erpInfo.team} />}
+                {selectedOrder.erpInfo?.platform && <DetailRow label="平台" value={selectedOrder.erpInfo.platform} />}
+                {selectedOrder.erpInfo?.shippingQty !== undefined && <DetailRow label="发货数量" value={String(selectedOrder.erpInfo.shippingQty)} />}
                 {selectedOrder.erpInfo?.logisticsProvider && <DetailRow label="物流服务商" value={selectedOrder.erpInfo.logisticsProvider} />}
                 {selectedOrder.erpInfo?.logisticsProviderDisplayName && <DetailRow label="C端物流商" value={selectedOrder.erpInfo.logisticsProviderDisplayName} />}
                 {selectedOrder.erpInfo?.currentChannel && <DetailRow label="当前渠道" value={selectedOrder.erpInfo.currentChannel} />}
-                {selectedOrder.erpInfo?.platform && <DetailRow label="平台" value={selectedOrder.erpInfo.platform} />}
-                {selectedOrder.erpInfo?.shippingQty !== undefined && <DetailRow label="发货数量" value={String(selectedOrder.erpInfo.shippingQty)} />}
+                {selectedOrder.erpInfo?.createdAt && <DetailRow label="创建时间" value={selectedOrder.erpInfo.createdAt} />}
                 {selectedOrder.erpInfo?.paymentTime && <DetailRow label="支付时间" value={selectedOrder.erpInfo.paymentTime} />}
                 {selectedOrder.erpInfo?.packingTime && <DetailRow label="打包时间" value={selectedOrder.erpInfo.packingTime} />}
                 {selectedOrder.erpInfo?.checkoutTime && <DetailRow label="签出时间" value={selectedOrder.erpInfo.checkoutTime} />}

@@ -603,16 +603,16 @@ export default function Exceptions() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50/80">
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">订单号</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">追踪号</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">承运商</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">国家</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">发货仓</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">团队</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">主状态</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">异常描述</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">最新轨迹</th>
-                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5">操作</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">订单号</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">追踪号</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">承运商</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">国家</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">发货仓</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">团队</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">主状态</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">异常描述</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">最新轨迹</th>
+                  <th className="text-left text-xs text-slate-500 font-medium py-4 px-5 whitespace-nowrap">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -710,6 +710,12 @@ export default function Exceptions() {
               </div>
               <div className="space-y-3 mb-4">
                 <div className="grid grid-cols-2 gap-3 text-sm">
+                  {trackingOrder.erpInfo?.orderNo && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">履约单号：</span>
+                      <span className="text-slate-900 font-medium">{trackingOrder.erpInfo.orderNo}</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <span className="text-slate-400">订单号：</span>
                     <span className="text-slate-900 font-medium">{trackingOrder.orderId}</span>
@@ -736,13 +742,61 @@ export default function Exceptions() {
                     <span className="text-slate-700">{trackingOrder.destination}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-400">状态：</span>
-                    <StatusBadge status={trackingOrder.status} />
-                  </div>
-                  <div className="flex items-center gap-2">
                     <span className="text-slate-400">国家：</span>
                     <span className="text-slate-700">{trackingOrder.destinationCountry}</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400">状态：</span>
+                    <StatusBadge status={trackingOrder.status} />
+                  </div>
+                  {trackingOrder.erpInfo?.warehouseCode && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">仓库代码：</span>
+                      <span className="text-slate-700">{trackingOrder.erpInfo.warehouseCode}</span>
+                    </div>
+                  )}
+                  {trackingOrder.erpInfo?.warehouse && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">发货仓库：</span>
+                      <span className="text-slate-700">{trackingOrder.erpInfo.warehouse}</span>
+                    </div>
+                  )}
+                  {trackingOrder.erpInfo?.platform && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">平台：</span>
+                      <span className="text-slate-700">{trackingOrder.erpInfo.platform}</span>
+                    </div>
+                  )}
+                  {trackingOrder.erpInfo?.logisticsProvider && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">物流服务商：</span>
+                      <span className="text-slate-700">{trackingOrder.erpInfo.logisticsProvider}</span>
+                    </div>
+                  )}
+                  {trackingOrder.erpInfo?.currentChannel && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">渠道：</span>
+                      <span className="text-slate-700">{trackingOrder.erpInfo.currentChannel}</span>
+                    </div>
+                  )}
+                  {trackingOrder.erpInfo?.createdAt && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">创建时间：</span>
+                      <span className="text-slate-700">{trackingOrder.erpInfo.createdAt}</span>
+                    </div>
+                  )}
+                  {trackingOrder.erpInfo?.checkoutTime && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">签出时间：</span>
+                      <span className="text-slate-700">{trackingOrder.erpInfo.checkoutTime}</span>
+                    </div>
+                  )}
+                  {trackingOrder.erpInfo?.paymentTime && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">支付时间：</span>
+                      <span className="text-slate-700">{trackingOrder.erpInfo.paymentTime}</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <TrackingTimeline order={trackingOrder} />
