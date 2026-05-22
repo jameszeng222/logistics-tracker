@@ -1,3 +1,5 @@
+import { getOnlineTime, loadStatusKeywordRules } from '@/config/statusKeywords'
+
 export interface MonitoringRule {
   id: string
   name: string
@@ -108,11 +110,12 @@ export function saveMonitoringRules(rules: MonitoringRule[]): void {
 }
 
 export function checkNotOnline(
-  order: { status: string; erpInfo?: { shippedAt?: string; createdAt?: string }; shipDate: string; events: { timestamp: string }[] },
+  order: { status: string; erpInfo?: { shippedAt?: string; createdAt?: string }; shipDate: string; events: { timestamp: string; description: string }[] },
   rule: MonitoringRule,
 ): boolean {
   if (rule.type !== 'not_online') return false
-  if (order.status !== 'not_found' && order.status !== 'info_received') return false
+  const onlineTime = getOnlineTime(order.events)
+  if (onlineTime) return false
   const baseTime = order.erpInfo?.shippedAt || order.shipDate
   if (!baseTime) return false
   const now = Date.now()

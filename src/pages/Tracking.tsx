@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import {
   Search, RotateCcw, Eye, X, ChevronLeft, ChevronRight,
   MapPin, AlertTriangle, Calendar, Truck, RefreshCw, Download,
-  FileDown, ChevronDown, Upload,
+  FileDown, ChevronDown, Upload, Copy,
 } from 'lucide-react'
 import FulfillmentImporter, { type ParsedFulfillmentRow } from '@/components/FulfillmentImporter'
 import dayjs from 'dayjs'
@@ -563,7 +563,7 @@ export default function Tracking() {
       {/* ===== 侧边栏：订单详情 ===== */}
       {selectedOrder && (
         <>
-          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30 lg:hidden" onClick={() => store.selectOrder(null)} />
+          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-30" onClick={() => store.selectOrder(null)} />
           <div className="fixed right-0 top-0 h-full w-[440px] bg-white border-l border-slate-100 z-40 flex flex-col shadow-2xl animate-slide-in">
             {/* 侧边栏头部 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-50">
@@ -581,7 +581,19 @@ export default function Tracking() {
               {/* 基本信息 */}
               <div className="space-y-3">
                 <DetailRow label="订单号" value={selectedOrder.orderId} />
-                <DetailRow label="追踪号" value={selectedOrder.trackingNumber} mono />
+                <div className="flex items-center justify-between py-1.5">
+                  <span className="text-xs text-slate-400">追踪号</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-700 font-mono text-xs">{selectedOrder.trackingNumber}</span>
+                    <button
+                      className="p-1 rounded hover:bg-slate-100 transition-colors"
+                      onClick={() => { navigator.clipboard.writeText(selectedOrder.trackingNumber) }}
+                      title="复制追踪号"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
+                    </button>
+                  </div>
+                </div>
                 <DetailRow label="承运商" value={selectedOrder.carrier} icon={<Truck className="w-3.5 h-3.5" />} />
                 <DetailRow label="始发地" value={selectedOrder.origin} />
                 <DetailRow label="目的地" value={selectedOrder.destination} icon={<MapPin className="w-3.5 h-3.5" />} />

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Trash2, AlertTriangle, Info, Ship } from 'lucide-react'
+import { Trash2, AlertTriangle, Info, Ship, Tag } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useLogisticsStore } from '@/store/logisticsStore'
 
 export default function OtherSettings() {
@@ -17,6 +18,16 @@ export default function OtherSettings() {
         <h1 className="text-2xl font-bold text-slate-900">其他设置</h1>
         <p className="text-sm text-slate-400 mt-1">数据管理与系统信息</p>
       </div>
+
+      <Link to="/settings/status-keywords" className="bg-white rounded-2xl border border-slate-200 p-6 max-w-2xl flex items-center gap-3 hover:border-indigo-200 transition-colors">
+        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+          <Tag className="w-5 h-5 text-indigo-500" />
+        </div>
+        <div>
+          <p className="font-medium text-slate-700">状态关键字</p>
+          <p className="text-xs text-slate-400">自定义物流轨迹关键字的状态含义</p>
+        </div>
+      </Link>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-2xl">
         <div className="flex items-center gap-3 mb-5">
