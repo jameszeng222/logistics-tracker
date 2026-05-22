@@ -29,7 +29,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=logistics-freight-calculator --branch=main
+          command: pages deploy dist --project-name=logistics-tracker --branch=main
 
       - name: Deploy to Preview (test)
         if: github.ref == 'refs/heads/test'
@@ -37,4 +37,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=logistics-freight-calculator --branch=test
+          command: pages deploy dist --project-name=logistics-tracker --branch=test
