@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Upload, X, FileDown, CheckCircle, AlertCircle } from 'lucide-react'
+import { Upload, X, FileDown, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 export interface ParsedFulfillmentRow {
@@ -21,7 +21,7 @@ export interface ParsedFulfillmentRow {
 interface FulfillmentImporterProps {
   open: boolean
   onClose: () => void
-  onImport: (rows: ParsedFulfillmentRow[]) => void
+  onImported: () => void
 }
 
 const XLSX_HEADERS = [
@@ -133,11 +133,13 @@ function parseXlsx(buffer: ArrayBuffer): {
   return { rows, errors }
 }
 
-export default function FulfillmentImporter({ open, onClose, onImport }: FulfillmentImporterProps) {
+export default function FulfillmentImporter({ open, onClose, onImported }: FulfillmentImporterProps) {
   const [dragActive, setDragActive] = useState(false)
   const [parsedRows, setParsedRows] = useState<ParsedFulfillmentRow[]>([])
   const [parseErrors, setParseErrors] = useState<{ row: number; reason: string }[]>([])
   const [fileName, setFileName] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; totalInDb: number; errors?: string[] } | null>(null)
 
   if (!open) return null
 
@@ -146,6 +148,7 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
     setParseErrors([])
     setFileName('')
     setDragActive(false)
+    setImportResult(null)
   }
 
   const handleClose = () => {
@@ -163,6 +166,7 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
 
   const processFile = (file: File) => {
     setFileName(file.name)
+    setImportResult(null)
     const reader = new FileReader()
     reader.onload = (e) => {
       const buffer = e.target?.result as ArrayBuffer
@@ -185,10 +189,73 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
     if (file) processFile(file)
   }
 
-  const handleConfirm = () => {
-    if (parsedRows.length > 0) {
-      onImport(parsedRows)
-      handleClose()
+  const handleConfirm = async () => {
+    if (parsedRows.length === 0) return
+    setImporting(true)
+    setImportResult(null)
+
+    try {
+      const BATCH = 200
+      let totalInserted = 0
+      let totalUpdated = 0
+      let totalSkipped = 0
+      let allErrors: string[] = []
+
+      for (let i = 0; i < parsedRows.length; i += BATCH) {
+        const batch = parsedRows.slice(i, i + BATCH)
+        const simpleRows = batch.map((row) => ({
+          orderNo: row.orderNo,
+          trackingNumber: row.trackingNumber,
+          warehouseCode: row.warehouseCode,
+          platform: row.platform,
+          shippingQty: String(row.shippingQty),
+          destinationCountry: row.destinationCountry,
+          paymentTime: row.paymentTime,
+          createdAt: row.createdAt,
+          packingTime: row.packingTime,
+          checkoutTime: row.checkoutTime,
+          logisticsProvider: row.logisticsProvider,
+          logisticsProviderDisplayName: row.logisticsProviderDisplayName,
+          currentChannel: row.currentChannel,
+        }))
+
+        const res = await fetch('/api/orders/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: simpleRows }),
+        })
+        const data = await res.json()
+
+        if (!data.success) {
+          allErrors.push(`批次${Math.floor(i / BATCH) + 1}: ${data.error}`)
+          continue
+        }
+
+        totalInserted += data.inserted || 0
+        totalUpdated += data.updated || 0
+        totalSkipped += data.skipped || 0
+        if (data.errors) allErrors = allErrors.concat(data.errors)
+      }
+
+      setImportResult({
+        inserted: totalInserted,
+        updated: totalUpdated,
+        skipped: totalSkipped,
+        totalInDb: 0,
+        errors: allErrors.length > 0 ? allErrors : undefined,
+      })
+
+      onImported()
+    } catch (err: any) {
+      setImportResult({
+        inserted: 0,
+        updated: 0,
+        skipped: 0,
+        totalInDb: 0,
+        errors: [err.message || '导入失败'],
+      })
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -198,11 +265,11 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={handleClose} />
+      <div className="absolute inset-0 bg-black/30" onClick={importing ? undefined : handleClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-base font-semibold text-slate-800">导入履约单</h2>
-          <button onClick={handleClose} className="p-1 rounded-lg hover:bg-slate-100 transition-colors">
+          <button onClick={handleClose} disabled={importing} className="p-1 rounded-lg hover:bg-slate-100 transition-colors">
             <X className="w-5 h-5 text-slate-400" />
           </button>
         </div>
@@ -241,28 +308,28 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
           {fileName && (
             <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
               <span className="truncate">{fileName}</span>
-              <button onClick={reset} className="text-slate-400 hover:text-slate-600 ml-auto">
+              <button onClick={reset} disabled={importing} className="text-slate-400 hover:text-slate-600 ml-auto">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
 
-          {(parsedRows.length > 0 || parseErrors.length > 0) && (
+          {(parsedRows.length > 0 || parseErrors.length > 0) && !importResult && (
             <div className="flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1 text-emerald-600">
                 <CheckCircle className="w-3.5 h-3.5" />
-                成功 {parsedRows.length} 条
+                解析成功 {parsedRows.length} 条
               </span>
               {parseErrors.length > 0 && (
                 <span className="flex items-center gap-1 text-red-500">
                   <AlertCircle className="w-3.5 h-3.5" />
-                  失败 {parseErrors.length} 条
+                  解析失败 {parseErrors.length} 条
                 </span>
               )}
             </div>
           )}
 
-          {parseErrors.length > 0 && (
+          {parseErrors.length > 0 && !importResult && (
             <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 max-h-24 overflow-y-auto">
               {parseErrors.map((err, i) => (
                 <p key={i} className="text-xs text-red-500">第 {err.row} 行: {err.reason}</p>
@@ -270,7 +337,41 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
             </div>
           )}
 
-          {previewRows.length > 0 && (
+          {importResult && (
+            <div className={`rounded-xl border p-4 ${importResult.inserted + importResult.updated > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                {importResult.inserted + importResult.updated > 0
+                  ? <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  : <AlertCircle className="w-4 h-4 text-red-500" />}
+                <span className={`text-sm font-medium ${importResult.inserted + importResult.updated > 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {importResult.inserted + importResult.updated > 0 ? '导入完成' : '导入失败'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="text-center">
+                  <p className="text-lg font-bold text-emerald-600">{importResult.inserted}</p>
+                  <p className="text-slate-500">新增</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-blue-600">{importResult.updated}</p>
+                  <p className="text-slate-500">更新</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-slate-400">{importResult.skipped}</p>
+                  <p className="text-slate-500">跳过</p>
+                </div>
+              </div>
+              {importResult.errors && importResult.errors.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-red-100 max-h-24 overflow-y-auto">
+                  {importResult.errors.map((err, i) => (
+                    <p key={i} className="text-xs text-red-500">{err}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {previewRows.length > 0 && !importResult && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -298,19 +399,32 @@ export default function FulfillmentImporter({ open, onClose, onImport }: Fulfill
         </div>
 
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
-          <button
-            onClick={handleClose}
-            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-50 transition-colors"
-          >
-            取消
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={parsedRows.length === 0}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            确认导入
-          </button>
+          {!importResult ? (
+            <>
+              <button
+                onClick={handleClose}
+                disabled={importing}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={parsedRows.length === 0 || importing}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                {importing && <Loader2 className="w-4 h-4 animate-spin" />}
+                {importing ? '导入中...' : `确认导入 (${parsedRows.length}条)`}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleClose}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
+            >
+              完成
+            </button>
+          )}
         </div>
       </div>
     </div>

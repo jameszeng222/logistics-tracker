@@ -4,7 +4,7 @@ import {
   MapPin, AlertTriangle, Calendar, Truck, RefreshCw, Download,
   FileDown, Upload, Copy, ExternalLink, Loader2, Plus,
 } from 'lucide-react'
-import FulfillmentImporter, { type ParsedFulfillmentRow } from '@/components/FulfillmentImporter'
+import FulfillmentImporter from '@/components/FulfillmentImporter'
 import dayjs from 'dayjs'
 import { useLogisticsStore } from '@/store/logisticsStore'
 import { STATUS_LABELS, EXCEPTION_SUBTYPE_LABELS, EXCEPTION_CATEGORY_LABELS } from '@/types'
@@ -177,56 +177,11 @@ export default function Tracking() {
 
   const hasActiveFilter = batchText.trim() || carrierFilter || countryFilter || timeStart || timeEnd || warehouseFilter || teamFilter || statusFilter
 
-  const handleFulfillmentImport = useCallback(async (rows: ParsedFulfillmentRow[]) => {
-    const newOrders: LogisticsOrder[] = rows.map((row) => ({
-      orderId: `ERP-${row.orderNo}`,
-      trackingNumber: row.trackingNumber,
-      carrier: row.logisticsProvider || row.logisticsProviderDisplayName || '未知',
-      origin: '',
-      destination: '',
-      destinationCountry: row.destinationCountry || '',
-      status: 'not_found' as const,
-      shipDate: row.checkoutTime || '',
-      deliveryDate: '',
-      slaDays: 20,
-      actualDays: undefined,
-      weight: 0,
-      currentLocation: '',
-      events: [],
-      erpInfo: {
-        orderNo: row.orderNo,
-        warehouseCode: row.warehouseCode,
-        platform: row.platform,
-        shippingQty: row.shippingQty,
-        destinationCountry: row.destinationCountry,
-        paymentTime: row.paymentTime,
-        createdAt: row.createdAt,
-        packingTime: row.packingTime,
-        checkoutTime: row.checkoutTime,
-        logisticsProvider: row.logisticsProvider,
-        logisticsProviderDisplayName: row.logisticsProviderDisplayName,
-        currentChannel: row.currentChannel,
-        trackingNumber: row.trackingNumber,
-        shippedAt: row.checkoutTime || '',
-        warehouse: row.warehouseCode || '',
-      },
-      syncMeta: {
-        source: 'csv_import' as const,
-        lastSyncAt: '',
-        syncVersion: 1,
-      },
-    }))
-    try {
-      const count = await store.mergeOrders(newOrders)
-      alert(`成功导入 ${count} 条履约单`)
-      setCountryFilter('')
-      setPage(1)
-    } catch (err: any) {
-      alert(`导入失败: ${err?.message || '未知错误'}`)
-    }
-    setImporterOpen(false)
+  const handleImported = useCallback(() => {
+    setCountryFilter('')
+    setPage(1)
     setRefreshKey((k) => k + 1)
-  }, [store])
+  }, [])
 
   const handleAddTrackingNumbers = useCallback(async () => {
     const numbers = parseBatchSearch(batchText)
@@ -660,7 +615,7 @@ export default function Tracking() {
       <FulfillmentImporter
         open={importerOpen}
         onClose={() => setImporterOpen(false)}
-        onImport={handleFulfillmentImport}
+        onImported={handleImported}
       />
     </div>
   )
