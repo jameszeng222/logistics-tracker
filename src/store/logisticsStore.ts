@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { LogisticsOrder, ErpInfo } from '@/types'
 import { getTrackInfo, testApiConnection } from '@/services/track17'
 import { convertTrackInfoToOrder, convertTrackListToOrders } from '@/utils/trackMapper'
-import { upsertOrdersToD1, fetchTrackingList, lookupOrders } from '@/services/d1Api'
+import { upsertOrdersToD1, fetchTrackingList } from '@/services/d1Api'
 import dayjs from 'dayjs'
 
 interface SyncProgress {
@@ -34,7 +34,7 @@ interface LogisticsStore {
   testConnection: () => Promise<{ success: boolean; message: string }>
   syncFrom17Track: () => Promise<void>
   fetchTrackDetail: (number: string, carrier?: number) => Promise<void>
-  mergeOrders: (orders: LogisticsOrder[]) => Promise<void>
+  mergeOrders: (orders: LogisticsOrder[]) => Promise<number>
   setAutoSync: (enabled: boolean) => void
   startAutoSync: () => void
   stopAutoSync: () => void
@@ -51,6 +51,7 @@ const defaultSyncProgress: SyncProgress = {
 let autoSyncTimer: ReturnType<typeof setInterval> | null = null
 
 const RATE_LIMIT_MS = 400
+const UPSERT_BATCH = 50
 
 export const useLogisticsStore = create<LogisticsStore>()(
   persist(
@@ -76,63 +77,24 @@ export const useLogisticsStore = create<LogisticsStore>()(
       },
 
       mergeOrders: async (incoming) => {
-        const trackingNumbers = incoming.map((o) => o.trackingNumber).filter(Boolean)
-        const orderNos = incoming.map((o) => o.erpInfo?.orderNo).filter(Boolean) as string[]
-
-        let existingOrders: LogisticsOrder[] = []
-        if (trackingNumbers.length > 0 || orderNos.length > 0) {
+        if (incoming.length === 0) return 0
+        let totalUpserted = 0
+        for (let i = 0; i < incoming.length; i += UPSERT_BATCH) {
+          const batch = incoming.slice(i, i + UPSERT_BATCH)
           try {
-            existingOrders = await lookupOrders({ trackingNumbers, orderNos })
-          } catch {}
-        }
-
-        const existingByTracking = new Map<string, LogisticsOrder>()
-        existingOrders.forEach((o) => {
-          if (o.trackingNumber) existingByTracking.set(o.trackingNumber, o)
-        })
-        const existingByOrderNo = new Map<string, LogisticsOrder>()
-        existingOrders.forEach((o) => {
-          if (o.erpInfo?.orderNo) existingByOrderNo.set(o.erpInfo.orderNo, o)
-        })
-
-        const toUpsert: LogisticsOrder[] = []
-        const updatedIds = new Set<string>()
-
-        for (const inc of incoming) {
-          const byTracking = inc.trackingNumber ? existingByTracking.get(inc.trackingNumber) : null
-          const byOrderNo = inc.erpInfo?.orderNo ? existingByOrderNo.get(inc.erpInfo.orderNo) : null
-          const existing = byTracking || byOrderNo
-
-          if (existing) {
-            if (!updatedIds.has(existing.orderId)) {
-              const incIsNewer = inc.syncMeta?.lastSyncAt && existing.syncMeta?.lastSyncAt
-                ? inc.syncMeta.lastSyncAt > existing.syncMeta.lastSyncAt
-                : !!inc.syncMeta?.lastSyncAt
-              let merged: LogisticsOrder
-              if (incIsNewer) {
-                merged = {
-                  ...existing,
-                  ...inc,
-                  orderId: existing.orderId,
-                  erpInfo: { ...existing.erpInfo, ...inc.erpInfo },
-                }
-              } else {
-                merged = {
-                  ...existing,
-                  erpInfo: { ...inc.erpInfo, ...existing.erpInfo },
-                }
+            const count = await upsertOrdersToD1(batch)
+            totalUpserted += count
+          } catch (err) {
+            console.error(`mergeOrders batch ${i} failed:`, err)
+            try {
+              for (const order of batch) {
+                await upsertOrdersToD1([order])
+                totalUpserted += 1
               }
-              toUpsert.push(merged)
-              updatedIds.add(existing.orderId)
-            }
-          } else {
-            toUpsert.push(inc)
+            } catch {}
           }
         }
-
-        if (toUpsert.length > 0) {
-          await upsertOrdersToD1(toUpsert)
-        }
+        return totalUpserted
       },
 
       setTrack17ApiKey: (key) => {
