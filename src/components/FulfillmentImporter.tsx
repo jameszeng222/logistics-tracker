@@ -139,7 +139,7 @@ export default function FulfillmentImporter({ open, onClose, onImported }: Fulfi
   const [parseErrors, setParseErrors] = useState<{ row: number; reason: string }[]>([])
   const [fileName, setFileName] = useState('')
   const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; totalInDb: number; errors?: string[] } | null>(null)
+  const [importResult, setImportResult] = useState<{ upserted: number; skipped: number; totalInDb: number; errors?: string[] } | null>(null)
 
   if (!open) return null
 
@@ -196,8 +196,7 @@ export default function FulfillmentImporter({ open, onClose, onImported }: Fulfi
 
     try {
       const BATCH = 200
-      let totalInserted = 0
-      let totalUpdated = 0
+      let totalUpserted = 0
       let totalSkipped = 0
       let allErrors: string[] = []
 
@@ -231,15 +230,13 @@ export default function FulfillmentImporter({ open, onClose, onImported }: Fulfi
           continue
         }
 
-        totalInserted += data.inserted || 0
-        totalUpdated += data.updated || 0
+        totalUpserted += data.upserted || 0
         totalSkipped += data.skipped || 0
         if (data.errors) allErrors = allErrors.concat(data.errors)
       }
 
       setImportResult({
-        inserted: totalInserted,
-        updated: totalUpdated,
+        upserted: totalUpserted,
         skipped: totalSkipped,
         totalInDb: 0,
         errors: allErrors.length > 0 ? allErrors : undefined,
@@ -248,8 +245,7 @@ export default function FulfillmentImporter({ open, onClose, onImported }: Fulfi
       onImported()
     } catch (err: any) {
       setImportResult({
-        inserted: 0,
-        updated: 0,
+        upserted: 0,
         skipped: 0,
         totalInDb: 0,
         errors: [err.message || '导入失败'],
@@ -338,23 +334,19 @@ export default function FulfillmentImporter({ open, onClose, onImported }: Fulfi
           )}
 
           {importResult && (
-            <div className={`rounded-xl border p-4 ${importResult.inserted + importResult.updated > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+            <div className={`rounded-xl border p-4 ${importResult.upserted > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
               <div className="flex items-center gap-2 mb-2">
-                {importResult.inserted + importResult.updated > 0
+                {importResult.upserted > 0
                   ? <CheckCircle className="w-4 h-4 text-emerald-500" />
                   : <AlertCircle className="w-4 h-4 text-red-500" />}
-                <span className={`text-sm font-medium ${importResult.inserted + importResult.updated > 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                  {importResult.inserted + importResult.updated > 0 ? '导入完成' : '导入失败'}
+                <span className={`text-sm font-medium ${importResult.upserted > 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {importResult.upserted > 0 ? '导入完成' : '导入失败'}
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="text-center">
-                  <p className="text-lg font-bold text-emerald-600">{importResult.inserted}</p>
-                  <p className="text-slate-500">新增</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-lg font-bold text-blue-600">{importResult.updated}</p>
-                  <p className="text-slate-500">更新</p>
+                  <p className="text-lg font-bold text-emerald-600">{importResult.upserted}</p>
+                  <p className="text-slate-500">成功导入</p>
                 </div>
                 <div className="text-center">
                   <p className="text-lg font-bold text-slate-400">{importResult.skipped}</p>

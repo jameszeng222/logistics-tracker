@@ -2,6 +2,43 @@ interface Env {
   DB: D1Database
 }
 
+const UPSERT_SQL = `INSERT INTO orders (
+  id, order_id, tracking_number, carrier, destination_country,
+  ship_date, erp_order_no, erp_created_at, erp_shipped_at,
+  erp_warehouse, erp_warehouse_code, erp_platform, erp_shipping_qty,
+  erp_payment_time, erp_packing_time, erp_checkout_time,
+  erp_logistics_provider, erp_logistics_provider_display, erp_current_channel,
+  status, sync_meta, events, updated_at
+) VALUES (
+  ?, ?, ?, ?, ?,
+  ?, ?, ?, ?,
+  ?, ?, ?, ?,
+  ?, ?, ?,
+  ?, ?, ?,
+  'not_found', '{}', '[]', datetime('now')
+)
+ON CONFLICT(id) DO UPDATE SET
+  tracking_number = excluded.tracking_number,
+  carrier = excluded.carrier,
+  destination_country = excluded.destination_country,
+  ship_date = excluded.ship_date,
+  erp_order_no = excluded.erp_order_no,
+  erp_created_at = excluded.erp_created_at,
+  erp_shipped_at = excluded.erp_shipped_at,
+  erp_warehouse = excluded.erp_warehouse,
+  erp_warehouse_code = excluded.erp_warehouse_code,
+  erp_platform = excluded.erp_platform,
+  erp_shipping_qty = excluded.erp_shipping_qty,
+  erp_payment_time = excluded.erp_payment_time,
+  erp_packing_time = excluded.erp_packing_time,
+  erp_checkout_time = excluded.erp_checkout_time,
+  erp_logistics_provider = excluded.erp_logistics_provider,
+  erp_logistics_provider_display = excluded.erp_logistics_provider_display,
+  erp_current_channel = excluded.erp_current_channel,
+  updated_at = datetime('now')`
+
+const EXPECTED_PARAM_COUNT = 19
+
 export const onRequest = [async (ctx: EventContext<Env, string, Record<string, unknown>>) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -41,81 +78,59 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       return Response.json({ success: false, error: 'No rows provided' }, { status: 400, headers: corsHeaders })
     }
 
-    let inserted = 0
-    let updated = 0
+    let upserted = 0
     let skipped = 0
     const errors: string[] = []
 
     for (let i = 0; i < body.rows.length; i++) {
       const r = body.rows[i]
-      const orderNo = (r.orderNo || '').trim()
-      const trackingNumber = (r.trackingNumber || '').trim()
+      const orderNo = String(r.orderNo || '').trim()
+      const trackingNumber = String(r.trackingNumber || '').trim()
       if (!orderNo || !trackingNumber) { skipped++; continue }
 
       const id = `ERP-${orderNo}`
-      const destinationCountry = (r.destinationCountry || '').trim()
-      const logisticsProvider = (r.logisticsProvider || '').trim()
-      const checkoutTime = (r.checkoutTime || '').trim()
-      const createdAt = (r.createdAt || '').trim()
-      const warehouseCode = (r.warehouseCode || '').trim()
-      const platform = (r.platform || '').trim()
+      const logisticsProvider = String(r.logisticsProvider || '').trim()
+      const destinationCountry = String(r.destinationCountry || '').trim()
+      const checkoutTime = String(r.checkoutTime || '').trim()
+      const createdAt = String(r.createdAt || '').trim()
+      const warehouseCode = String(r.warehouseCode || '').trim()
+      const platform = String(r.platform || '').trim()
       const shippingQty = Number(r.shippingQty) || 0
-      const paymentTime = (r.paymentTime || '').trim()
-      const packingTime = (r.packingTime || '').trim()
-      const providerDisplay = (r.logisticsProviderDisplayName || '').trim()
-      const currentChannel = (r.currentChannel || '').trim()
+      const paymentTime = String(r.paymentTime || '').trim()
+      const packingTime = String(r.packingTime || '').trim()
+      const providerDisplay = String(r.logisticsProviderDisplayName || '').trim()
+      const currentChannel = String(r.currentChannel || '').trim()
+
+      const params = [
+        id,
+        id,
+        trackingNumber,
+        logisticsProvider,
+        destinationCountry,
+        checkoutTime,
+        orderNo,
+        createdAt,
+        checkoutTime,
+        warehouseCode,
+        warehouseCode,
+        platform,
+        shippingQty,
+        paymentTime,
+        packingTime,
+        checkoutTime,
+        logisticsProvider,
+        providerDisplay,
+        currentChannel,
+      ]
+
+      if (params.length !== EXPECTED_PARAM_COUNT) {
+        errors.push(`第${i + 1}行(${orderNo}): 参数数量错误 expected=${EXPECTED_PARAM_COUNT} actual=${params.length}`)
+        continue
+      }
 
       try {
-        const existing = await db.prepare('SELECT id FROM orders WHERE id = ?').bind(id).first()
-
-        if (existing) {
-          await db.prepare(
-            `UPDATE orders SET
-              tracking_number = ?, carrier = ?, destination_country = ?,
-              ship_date = ?, erp_order_no = ?, erp_created_at = ?,
-              erp_shipped_at = ?, erp_warehouse = ?, erp_warehouse_code = ?,
-              erp_platform = ?, erp_shipping_qty = ?, erp_payment_time = ?,
-              erp_packing_time = ?, erp_checkout_time = ?,
-              erp_logistics_provider = ?, erp_logistics_provider_display = ?,
-              erp_current_channel = ?, updated_at = datetime('now')
-            WHERE id = ?`
-          ).bind(
-            trackingNumber, logisticsProvider, destinationCountry,
-            checkoutTime, orderNo, createdAt,
-            checkoutTime, warehouseCode, warehouseCode,
-            platform, shippingQty, paymentTime,
-            packingTime, checkoutTime,
-            logisticsProvider, providerDisplay,
-            currentChannel, id
-          ).run()
-          updated++
-        } else {
-          await db.prepare(
-            `INSERT INTO orders (
-              id, order_id, tracking_number, carrier, destination_country, status,
-              ship_date, erp_order_no, erp_created_at, erp_shipped_at,
-              erp_warehouse, erp_warehouse_code, erp_platform, erp_shipping_qty,
-              erp_payment_time, erp_packing_time, erp_checkout_time,
-              erp_logistics_provider, erp_logistics_provider_display, erp_current_channel,
-              sync_meta, events, updated_at
-            ) VALUES (
-              ?, ?, ?, ?, ?, 'not_found',
-              ?, ?, ?, ?,
-              ?, ?, ?, ?,
-              ?, ?, ?,
-              ?, ?, ?,
-              '{}', '[]', datetime('now')
-            )`
-          ).bind(
-            id, id, trackingNumber, logisticsProvider, destinationCountry,
-            checkoutTime,
-            orderNo, createdAt, checkoutTime,
-            warehouseCode, warehouseCode, platform, shippingQty,
-            paymentTime, packingTime, checkoutTime,
-            logisticsProvider, providerDisplay, currentChannel
-          ).run()
-          inserted++
-        }
+        await db.prepare(UPSERT_SQL).bind(...params).run()
+        upserted++
       } catch (err: any) {
         errors.push(`第${i + 1}行(${orderNo}): ${err.message}`)
         if (errors.length >= 20) break
@@ -127,8 +142,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
 
     return Response.json({
       success: true,
-      inserted,
-      updated,
+      upserted,
       skipped,
       totalInDb,
       errors: errors.length > 0 ? errors : undefined,

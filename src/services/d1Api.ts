@@ -213,7 +213,7 @@ export async function fetchOrdersFromD1(params: FetchOrdersParams = {}): Promise
 
 export async function upsertOrdersToD1(orders: LogisticsOrder[]): Promise<number> {
   const rows = orders.map(orderToRow)
-  const res = await fetch(`${API_BASE}/import`, {
+  const res = await fetch(`${API_BASE}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orders: rows }),
