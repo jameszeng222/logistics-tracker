@@ -37,7 +37,32 @@ ON CONFLICT(id) DO UPDATE SET
   erp_current_channel = excluded.erp_current_channel,
   updated_at = datetime('now')`
 
-const EXPECTED_PARAM_COUNT = 19
+function buildStmt(db: D1Database, r: Record<string, string>) {
+  const orderNo = String(r.orderNo || '').trim()
+  const trackingNumber = String(r.trackingNumber || '').trim()
+  const id = `ERP-${orderNo}`
+  return db.prepare(UPSERT_SQL).bind(
+    id,
+    id,
+    trackingNumber,
+    String(r.logisticsProvider || '').trim(),
+    String(r.destinationCountry || '').trim(),
+    String(r.checkoutTime || '').trim(),
+    orderNo,
+    String(r.createdAt || '').trim(),
+    String(r.checkoutTime || '').trim(),
+    String(r.warehouseCode || '').trim(),
+    String(r.warehouseCode || '').trim(),
+    String(r.platform || '').trim(),
+    Number(r.shippingQty) || 0,
+    String(r.paymentTime || '').trim(),
+    String(r.packingTime || '').trim(),
+    String(r.checkoutTime || '').trim(),
+    String(r.logisticsProvider || '').trim(),
+    String(r.logisticsProviderDisplayName || '').trim(),
+    String(r.currentChannel || '').trim(),
+  )
+}
 
 export const onRequest = [async (ctx: EventContext<Env, string, Record<string, unknown>>) => {
   const corsHeaders = {
@@ -78,7 +103,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       return Response.json({ success: false, error: 'No rows provided' }, { status: 400, headers: corsHeaders })
     }
 
-    let upserted = 0
+    const validRows: Array<{ index: number; row: Record<string, string> }> = []
     let skipped = 0
     const errors: string[] = []
 
@@ -87,52 +112,34 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       const orderNo = String(r.orderNo || '').trim()
       const trackingNumber = String(r.trackingNumber || '').trim()
       if (!orderNo || !trackingNumber) { skipped++; continue }
+      validRows.push({ index: i, row: r })
+    }
 
-      const id = `ERP-${orderNo}`
-      const logisticsProvider = String(r.logisticsProvider || '').trim()
-      const destinationCountry = String(r.destinationCountry || '').trim()
-      const checkoutTime = String(r.checkoutTime || '').trim()
-      const createdAt = String(r.createdAt || '').trim()
-      const warehouseCode = String(r.warehouseCode || '').trim()
-      const platform = String(r.platform || '').trim()
-      const shippingQty = Number(r.shippingQty) || 0
-      const paymentTime = String(r.paymentTime || '').trim()
-      const packingTime = String(r.packingTime || '').trim()
-      const providerDisplay = String(r.logisticsProviderDisplayName || '').trim()
-      const currentChannel = String(r.currentChannel || '').trim()
+    let upserted = 0
+    const BATCH_SIZE = 100
 
-      const params = [
-        id,
-        id,
-        trackingNumber,
-        logisticsProvider,
-        destinationCountry,
-        checkoutTime,
-        orderNo,
-        createdAt,
-        checkoutTime,
-        warehouseCode,
-        warehouseCode,
-        platform,
-        shippingQty,
-        paymentTime,
-        packingTime,
-        checkoutTime,
-        logisticsProvider,
-        providerDisplay,
-        currentChannel,
-      ]
-
-      if (params.length !== EXPECTED_PARAM_COUNT) {
-        errors.push(`第${i + 1}行(${orderNo}): 参数数量错误 expected=${EXPECTED_PARAM_COUNT} actual=${params.length}`)
-        continue
-      }
+    for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
+      const batch = validRows.slice(i, i + BATCH_SIZE)
+      const stmts = batch.map(({ row }) => buildStmt(db, row))
 
       try {
-        await db.prepare(UPSERT_SQL).bind(...params).run()
-        upserted++
+        await db.batch(stmts)
+        upserted += batch.length
       } catch (err: any) {
-        errors.push(`第${i + 1}行(${orderNo}): ${err.message}`)
+        if (batch.length === 1) {
+          const orderNo = String(batch[0].row.orderNo || '').trim()
+          errors.push(`第${batch[0].index + 1}行(${orderNo}): ${err.message}`)
+        } else {
+          for (const item of batch) {
+            try {
+              await buildStmt(db, item.row).run()
+              upserted++
+            } catch (e2: any) {
+              const orderNo = String(item.row.orderNo || '').trim()
+              errors.push(`第${item.index + 1}行(${orderNo}): ${e2.message}`)
+            }
+          }
+        }
         if (errors.length >= 20) break
       }
     }

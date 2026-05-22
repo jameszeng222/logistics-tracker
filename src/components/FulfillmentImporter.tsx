@@ -195,7 +195,7 @@ export default function FulfillmentImporter({ open, onClose, onImported }: Fulfi
     setImportResult(null)
 
     try {
-      const BATCH = 200
+      const BATCH = 500
       let totalUpserted = 0
       let totalSkipped = 0
       let allErrors: string[] = []
