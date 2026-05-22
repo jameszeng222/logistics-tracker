@@ -113,6 +113,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
         const events = typeof o.events === 'string' ? o.events : JSON.stringify(o.events || [])
         const syncMeta = typeof o.syncMeta === 'string' ? o.syncMeta : JSON.stringify(o.syncMeta || {})
         const erpInfo = o.erpInfo || {}
+        const e = (key: string, flatKey: string) => erpInfo[key] || o[flatKey] || ''
 
         return db.prepare(
           `INSERT INTO orders (id, order_id, tracking_number, carrier, carrier_code, origin, destination, destination_country, status, sub_status, ship_date, delivery_date, actual_days, sla_days, exception_description, erp_order_no, erp_created_at, erp_shipped_at, erp_warehouse, erp_team, erp_warehouse_code, erp_platform, erp_shipping_qty, erp_payment_time, erp_packing_time, erp_checkout_time, erp_logistics_provider, erp_logistics_provider_display, erp_current_channel, sync_meta, events, updated_at)
@@ -154,13 +155,13 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
           o.origin || '', o.destination || '', o.destinationCountry || '',
           o.status || 'not_found', o.subStatus || (o.events?.[0]?.subStatus) || '',
           o.shipDate || '', o.deliveryDate || '', o.actualDays || null, o.slaDays || 20,
-          o.exception?.description || '',
-          erpInfo.orderNo || '', erpInfo.createdAt || '', erpInfo.shippedAt || '',
-          erpInfo.warehouse || '', erpInfo.team || '',
-          erpInfo.warehouseCode || '', erpInfo.platform || '', erpInfo.shippingQty || 0,
-          erpInfo.paymentTime || '', erpInfo.packingTime || '', erpInfo.checkoutTime || '',
-          erpInfo.logisticsProvider || '', erpInfo.logisticsProviderDisplayName || '',
-          erpInfo.currentChannel || '',
+          o.exception?.description || o.exceptionDescription || '',
+          e('orderNo', 'erpOrderNo'), e('createdAt', 'erpCreatedAt'), e('shippedAt', 'erpShippedAt'),
+          e('warehouse', 'erpWarehouse'), e('team', 'erpTeam'),
+          e('warehouseCode', 'erpWarehouseCode'), e('platform', 'erpPlatform'), erpInfo.shippingQty || o.erpShippingQty || 0,
+          e('paymentTime', 'erpPaymentTime'), e('packingTime', 'erpPackingTime'), e('checkoutTime', 'erpCheckoutTime'),
+          e('logisticsProvider', 'erpLogisticsProvider'), e('logisticsProviderDisplayName', 'erpLogisticsProviderDisplay'),
+          e('currentChannel', 'erpCurrentChannel'),
           syncMeta, events
         )
       })
