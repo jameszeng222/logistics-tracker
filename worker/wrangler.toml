@@ -1,0 +1,18 @@
+name = "logistics-tracker-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+kv_namespaces = [
+  { binding = "ORDERS_KV", id = "762c8e84eb6c45ea8d712a67bee6ddfe" }
+]
+
+[vars]
+ENVIRONMENT = "production"
+
+# Secrets (set via `wrangler secret put`):
+# - TRACK17_API_KEY: 17track API key for tracking requests
+# - ERP_WEBHOOK_SECRET: Bearer token for ERP webhook authentication
+
+# [[routes]]
+# pattern = "api.example.com/*"
+# zone_name = "example.com"
