@@ -103,8 +103,8 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
         actualDays: row.actual_days,
         slaDays: row.sla_days || 20,
         exception: row.exception_description ? { description: row.exception_description } : undefined,
-        erpInfo: row.erp_order_no ? {
-          orderNo: row.erp_order_no,
+        erpInfo: (row.erp_order_no || row.erp_created_at || row.erp_checkout_time || row.erp_warehouse_code || row.erp_logistics_provider) ? {
+          orderNo: row.erp_order_no || '',
           createdAt: row.erp_created_at || '',
           shippedAt: row.erp_shipped_at || '',
           warehouse: row.erp_warehouse || '',

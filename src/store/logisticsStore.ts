@@ -184,6 +184,7 @@ export const useLogisticsStore = create<LogisticsStore>()(
 
     const merged = [...state.orders]
     const toAdd: LogisticsOrder[] = []
+    const toUpsert: LogisticsOrder[] = []
     const updatedIds = new Set<string>()
 
     for (const inc of incoming) {
@@ -211,14 +212,18 @@ export const useLogisticsStore = create<LogisticsStore>()(
             }
           }
           updatedIds.add(existing.orderId)
+          toUpsert.push(merged[idx])
         }
       } else {
         toAdd.push(inc)
+        toUpsert.push(inc)
       }
     }
 
     const allMerged = [...merged, ...toAdd]
-    upsertOrdersToD1(allMerged).catch(() => {})
+    if (toUpsert.length > 0) {
+      upsertOrdersToD1(toUpsert).catch(() => {})
+    }
     return { orders: allMerged }
   }),
 
@@ -605,7 +610,6 @@ export const useLogisticsStore = create<LogisticsStore>()(
     {
       name: 'logistics-store',
       partialize: (state) => ({
-        orders: state.orders,
         track17Config: {
           apiKey: state.track17Config.apiKey,
           connected: state.track17Config.connected,
@@ -617,7 +621,6 @@ export const useLogisticsStore = create<LogisticsStore>()(
         const p = persisted as Partial<LogisticsStore>
         return {
           ...current,
-          ...(p.orders && p.orders.length > 0 ? { orders: p.orders } : {}),
           track17Config: {
             ...current.track17Config,
             apiKey: p.track17Config?.apiKey || '',

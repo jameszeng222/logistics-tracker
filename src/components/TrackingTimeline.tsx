@@ -25,9 +25,10 @@ function getSystemEvents(order: LogisticsOrder): SystemEvent[] {
       color: { dot: '#6366F1', bg: 'bg-indigo-50', text: 'text-indigo-600' },
     })
   }
-  if (order.erpInfo?.checkoutTime || order.erpInfo?.shippedAt) {
+  const checkoutTs = order.erpInfo?.checkoutTime || order.erpInfo?.shippedAt || order.shipDate
+  if (checkoutTs) {
     events.push({
-      timestamp: order.erpInfo.checkoutTime || order.erpInfo.shippedAt || '',
+      timestamp: checkoutTs,
       label: '出库签出',
       description: '包裹已从仓库签出',
       icon: LogOut,
