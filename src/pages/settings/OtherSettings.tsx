@@ -1,19 +1,36 @@
 import { useState, useEffect } from 'react'
-import { Trash2, AlertTriangle, Info, Ship } from 'lucide-react'
+import { Trash2, AlertTriangle, Info, Ship, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { getOrderCountFromD1, clearAllOrdersFromD1 } from '@/services/d1Api'
 
 export default function OtherSettings() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [orderCount, setOrderCount] = useState(0)
+  const [clearing, setClearing] = useState(false)
+  const [clearResult, setClearResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  const refreshCount = () => {
+    getOrderCountFromD1().then(setOrderCount)
+  }
 
   useEffect(() => {
-    getOrderCountFromD1().then(setOrderCount)
+    refreshCount()
   }, [])
 
   const handleClearAll = async () => {
-    await clearAllOrdersFromD1()
-    setOrderCount(0)
-    setShowConfirm(false)
+    setClearing(true)
+    setClearResult(null)
+    try {
+      const deleted = await clearAllOrdersFromD1()
+      setOrderCount(0)
+      setShowConfirm(false)
+      setClearResult({ success: true, message: `已成功清空 ${deleted} 条订单数据` })
+      refreshCount()
+    } catch (err: any) {
+      setClearResult({ success: false, message: err.message || '清空失败' })
+      refreshCount()
+    } finally {
+      setClearing(false)
+    }
   }
 
   return (
@@ -46,14 +63,23 @@ export default function OtherSettings() {
             当前共有 <span className="font-medium text-slate-700">{orderCount}</span> 条订单数据
           </p>
 
+          {clearResult && (
+            <div className={`flex items-center gap-2 p-3 rounded-xl border ${clearResult.success ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+              {clearResult.success
+                ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                : <AlertCircle className="w-4 h-4 text-red-500" />}
+              <span className={`text-xs ${clearResult.success ? 'text-emerald-600' : 'text-red-500'}`}>{clearResult.message}</span>
+            </div>
+          )}
+
           {!showConfirm ? (
             <button
               className="btn-secondary flex items-center gap-2 text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300 hover:text-red-600"
               onClick={() => setShowConfirm(true)}
-              disabled={orderCount === 0}
+              disabled={orderCount === 0 || clearing}
             >
-              <Trash2 className="w-4 h-4" />
-              清空所有数据
+              {clearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {clearing ? '清空中...' : '清空所有数据'}
             </button>
           ) : (
             <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-100 rounded-xl">
@@ -63,14 +89,17 @@ export default function OtherSettings() {
                 <p className="text-xs text-red-500 mt-0.5">此操作不可撤销，所有订单数据将被永久删除</p>
               </div>
               <button
-                className="btn-primary !bg-red-500 hover:!bg-red-600"
+                className="btn-primary !bg-red-500 hover:!bg-red-600 flex items-center gap-1.5"
                 onClick={handleClearAll}
+                disabled={clearing}
               >
+                {clearing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 确认清空
               </button>
               <button
                 className="btn-secondary"
                 onClick={() => setShowConfirm(false)}
+                disabled={clearing}
               >
                 取消
               </button>

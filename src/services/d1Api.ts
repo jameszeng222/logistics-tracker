@@ -218,8 +218,11 @@ export async function deleteOrderFromD1(id: string): Promise<void> {
   await fetch(`${API_BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-export async function clearAllOrdersFromD1(): Promise<void> {
-  await fetch(`${API_BASE}/clear`, { method: 'DELETE' })
+export async function clearAllOrdersFromD1(): Promise<number> {
+  const res = await fetch(`${API_BASE}/clear`, { method: 'DELETE' })
+  const data = await res.json()
+  if (!data.success) throw new Error(data.error || 'Failed to clear orders')
+  return data.deleted || 0
 }
 
 export async function getOrderCountFromD1(): Promise<number> {

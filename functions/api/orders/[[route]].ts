@@ -290,18 +290,24 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
       return Response.json({ success: true, countries, carriers, warehouses, teams, statuses }, { headers: corsHeaders })
     }
 
+    if (url.pathname === '/api/orders/clear' && method === 'DELETE') {
+      let totalDeleted = 0
+      while (true) {
+        const result = await db.prepare('DELETE FROM orders WHERE rowid IN (SELECT rowid FROM orders LIMIT 5000)').run()
+        const changes = result.meta?.changes || 0
+        totalDeleted += changes
+        if (changes === 0) break
+      }
+      return Response.json({ success: true, message: 'All orders cleared', deleted: totalDeleted }, { headers: corsHeaders })
+    }
+
     if (url.pathname.match(/^\/api\/orders\//) && method === 'DELETE') {
       const id = url.pathname.split('/api/orders/')[1]
-      if (!id) {
+      if (!id || id === 'clear') {
         return Response.json({ success: false, error: 'Order ID required' }, { status: 400, headers: corsHeaders })
       }
       await db.prepare('DELETE FROM orders WHERE id = ?').bind(id).run()
       return Response.json({ success: true }, { headers: corsHeaders })
-    }
-
-    if (url.pathname === '/api/orders/clear' && method === 'DELETE') {
-      await db.prepare('DELETE FROM orders').run()
-      return Response.json({ success: true, message: 'All orders cleared' }, { headers: corsHeaders })
     }
 
     return Response.json({ success: false, error: 'Not found' }, { status: 404, headers: corsHeaders })
