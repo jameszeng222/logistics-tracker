@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS orders (
   erp_shipped_at TEXT DEFAULT '',
   erp_warehouse TEXT DEFAULT '',
   erp_team TEXT DEFAULT '',
+  erp_warehouse_code TEXT DEFAULT '',
+  erp_platform TEXT DEFAULT '',
+  erp_shipping_qty INTEGER DEFAULT 0,
+  erp_payment_time TEXT DEFAULT '',
+  erp_packing_time TEXT DEFAULT '',
+  erp_checkout_time TEXT DEFAULT '',
+  erp_logistics_provider TEXT DEFAULT '',
+  erp_logistics_provider_display TEXT DEFAULT '',
+  erp_current_channel TEXT DEFAULT '',
   sync_meta TEXT DEFAULT '{}',
   events TEXT DEFAULT '[]',
   created_at TEXT DEFAULT (datetime('now')),
@@ -34,3 +43,6 @@ CREATE INDEX IF NOT EXISTS idx_orders_warehouse ON orders(erp_warehouse);
 CREATE INDEX IF NOT EXISTS idx_orders_team ON orders(erp_team);
 CREATE INDEX IF NOT EXISTS idx_orders_shipped_at ON orders(erp_shipped_at);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(erp_created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_erp_order_no ON orders(erp_order_no);
+CREATE INDEX IF NOT EXISTS idx_orders_logistics_provider ON orders(erp_logistics_provider);
+CREATE INDEX IF NOT EXISTS idx_orders_current_channel ON orders(erp_current_channel);

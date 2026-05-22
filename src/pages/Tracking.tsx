@@ -2,8 +2,9 @@ import { useState, useMemo, useCallback } from 'react'
 import {
   Search, RotateCcw, Eye, X, ChevronLeft, ChevronRight,
   MapPin, AlertTriangle, Calendar, Truck, RefreshCw, Download,
-  FileDown, ChevronDown,
+  FileDown, ChevronDown, Upload,
 } from 'lucide-react'
+import FulfillmentImporter, { type ParsedFulfillmentRow } from '@/components/FulfillmentImporter'
 import dayjs from 'dayjs'
 import { useLogisticsStore } from '@/store/logisticsStore'
 import { CARRIERS, STATUS_LABELS, STATUS_COLORS, EXCEPTION_SUBTYPE_LABELS, EXCEPTION_CATEGORY_LABELS } from '@/types'
@@ -111,6 +112,7 @@ export default function Tracking() {
 
   /* --- 批量搜索框展开状态 --- */
   const [batchExpanded, setBatchExpanded] = useState(true)
+  const [importerOpen, setImporterOpen] = useState(false)
 
   /* --- 从store获取全量订单（受store.filters影响） --- */
   const allOrders = useMemo(() => store.getFilteredOrders(), [store.orders, store.filters])
@@ -198,6 +200,83 @@ export default function Tracking() {
   /* --- 选中订单详情 --- */
   const selectedOrder = store.selectedOrderId ? store.getOrderById(store.selectedOrderId) : undefined
 
+  /* --- 导入履约单回调 --- */
+  const handleFulfillmentImport = useCallback((rows: ParsedFulfillmentRow[]) => {
+    const store = useLogisticsStore.getState()
+    const existingOrders = store.orders
+
+    const newOrUpdatedOrders = rows.map((row) => {
+      const existing = existingOrders.find(
+        (o) => o.trackingNumber === row.trackingNumber || o.erpInfo?.orderNo === row.orderNo
+      )
+
+      if (existing) {
+        return {
+          ...existing,
+          erpInfo: {
+            ...existing.erpInfo,
+            orderNo: row.orderNo,
+            warehouseCode: row.warehouseCode,
+            platform: row.platform,
+            shippingQty: row.shippingQty,
+            destinationCountry: row.destinationCountry,
+            paymentTime: row.paymentTime,
+            createdAt: row.createdAt || existing.erpInfo?.createdAt,
+            packingTime: row.packingTime,
+            checkoutTime: row.checkoutTime,
+            logisticsProvider: row.logisticsProvider,
+            logisticsProviderDisplayName: row.logisticsProviderDisplayName,
+            currentChannel: row.currentChannel,
+            trackingNumber: row.trackingNumber,
+            warehouse: existing.erpInfo?.warehouse || row.warehouseCode,
+          },
+          destinationCountry: row.destinationCountry || existing.destinationCountry,
+        }
+      }
+
+      return {
+        orderId: `ERP-${row.orderNo}`,
+        trackingNumber: row.trackingNumber,
+        carrier: row.logisticsProviderDisplayName || row.logisticsProvider || '未知',
+        origin: '',
+        destination: '',
+        destinationCountry: row.destinationCountry || '',
+        status: 'not_found' as const,
+        shipDate: row.checkoutTime || '',
+        deliveryDate: undefined,
+        slaDays: 20,
+        actualDays: undefined,
+        weight: 0,
+        currentLocation: '',
+        events: [],
+        erpInfo: {
+          orderNo: row.orderNo,
+          warehouseCode: row.warehouseCode,
+          platform: row.platform,
+          shippingQty: row.shippingQty,
+          destinationCountry: row.destinationCountry,
+          paymentTime: row.paymentTime,
+          createdAt: row.createdAt,
+          packingTime: row.packingTime,
+          checkoutTime: row.checkoutTime,
+          logisticsProvider: row.logisticsProvider,
+          logisticsProviderDisplayName: row.logisticsProviderDisplayName,
+          currentChannel: row.currentChannel,
+          trackingNumber: row.trackingNumber,
+          warehouse: row.warehouseCode,
+        },
+        syncMeta: {
+          source: 'csv_import' as const,
+          lastSyncAt: new Date().toISOString(),
+          syncVersion: 1,
+        },
+      }
+    })
+
+    store.mergeOrders(newOrUpdatedOrders)
+    setImporterOpen(false)
+  }, [])
+
   /* --- 重置所有页面筛选 --- */
   const resetFilters = useCallback(() => {
     setBatchText('')
@@ -231,6 +310,12 @@ export default function Tracking() {
             <p className="text-sm text-slate-400 mt-1">实时追踪物流订单状态与轨迹</p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-sm transition-all"
+              onClick={() => setImporterOpen(true)}
+            >
+              <Upload className="w-4 h-4" />导入履约单
+            </button>
             <button
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-all"
               onClick={() => exportToCSV(filteredOrders, `订单追踪_${dayjs().format('YYYYMMDDHHmm')}`)}
@@ -559,6 +644,12 @@ export default function Tracking() {
         @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .animate-slide-in { animation: slideIn 0.25s ease-out; }
       `}</style>
+
+      <FulfillmentImporter
+        open={importerOpen}
+        onClose={() => setImporterOpen(false)}
+        onImport={handleFulfillmentImport}
+      />
     </div>
   )
 }

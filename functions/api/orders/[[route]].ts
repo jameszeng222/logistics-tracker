@@ -109,6 +109,15 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
           shippedAt: row.erp_shipped_at || '',
           warehouse: row.erp_warehouse || '',
           team: row.erp_team || '',
+          warehouseCode: row.erp_warehouse_code || '',
+          platform: row.erp_platform || '',
+          shippingQty: row.erp_shipping_qty || 0,
+          paymentTime: row.erp_payment_time || '',
+          packingTime: row.erp_packing_time || '',
+          checkoutTime: row.erp_checkout_time || '',
+          logisticsProvider: row.erp_logistics_provider || '',
+          logisticsProviderDisplayName: row.erp_logistics_provider_display || '',
+          currentChannel: row.erp_current_channel || '',
         } : undefined,
         syncMeta: JSON.parse(row.sync_meta || '{}'),
         events: JSON.parse(row.events || '[]'),
@@ -130,8 +139,8 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
         const erpInfo = o.erpInfo || {}
 
         return db.prepare(
-          `INSERT INTO orders (id, order_id, tracking_number, carrier, carrier_code, origin, destination, destination_country, status, sub_status, ship_date, delivery_date, actual_days, sla_days, exception_description, erp_order_no, erp_created_at, erp_shipped_at, erp_warehouse, erp_team, sync_meta, events, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          `INSERT INTO orders (id, order_id, tracking_number, carrier, carrier_code, origin, destination, destination_country, status, sub_status, ship_date, delivery_date, actual_days, sla_days, exception_description, erp_order_no, erp_created_at, erp_shipped_at, erp_warehouse, erp_team, erp_warehouse_code, erp_platform, erp_shipping_qty, erp_payment_time, erp_packing_time, erp_checkout_time, erp_logistics_provider, erp_logistics_provider_display, erp_current_channel, sync_meta, events, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
            ON CONFLICT(id) DO UPDATE SET
              order_id = excluded.order_id,
              tracking_number = excluded.tracking_number,
@@ -152,6 +161,15 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
              erp_shipped_at = excluded.erp_shipped_at,
              erp_warehouse = excluded.erp_warehouse,
              erp_team = excluded.erp_team,
+             erp_warehouse_code = excluded.erp_warehouse_code,
+             erp_platform = excluded.erp_platform,
+             erp_shipping_qty = excluded.erp_shipping_qty,
+             erp_payment_time = excluded.erp_payment_time,
+             erp_packing_time = excluded.erp_packing_time,
+             erp_checkout_time = excluded.erp_checkout_time,
+             erp_logistics_provider = excluded.erp_logistics_provider,
+             erp_logistics_provider_display = excluded.erp_logistics_provider_display,
+             erp_current_channel = excluded.erp_current_channel,
              sync_meta = excluded.sync_meta,
              events = excluded.events,
              updated_at = datetime('now')`
@@ -163,6 +181,10 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
           o.exception?.description || '',
           erpInfo.orderNo || '', erpInfo.createdAt || '', erpInfo.shippedAt || '',
           erpInfo.warehouse || '', erpInfo.team || '',
+          erpInfo.warehouseCode || '', erpInfo.platform || '', erpInfo.shippingQty || 0,
+          erpInfo.paymentTime || '', erpInfo.packingTime || '', erpInfo.checkoutTime || '',
+          erpInfo.logisticsProvider || '', erpInfo.logisticsProviderDisplayName || '',
+          erpInfo.currentChannel || '',
           syncMeta, events
         )
       })

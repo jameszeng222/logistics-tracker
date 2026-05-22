@@ -99,6 +99,17 @@ export interface ErpInfo {
   shippedAt?: string
   warehouse?: string
   team?: string
+  warehouseCode?: string
+  platform?: string
+  shippingQty?: number
+  destinationCountry?: string
+  paymentTime?: string
+  packingTime?: string
+  checkoutTime?: string
+  logisticsProvider?: string
+  logisticsProviderDisplayName?: string
+  currentChannel?: string
+  trackingNumber?: string
 }
 
 export interface SyncMeta {
