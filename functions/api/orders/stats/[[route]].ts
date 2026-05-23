@@ -83,8 +83,9 @@ async function handleStatusDistribution(db: D1Database, where: string, params: a
     `SELECT status, COUNT(*) as count FROM orders ${where} GROUP BY status`
   ).bind(...params).all()
 
+  const subWhere = appendWhere(where, ["sub_status != ''"])
   const bySubStatusRows = await db.prepare(
-    `SELECT sub_status, COUNT(*) as count FROM orders ${where} AND sub_status != '' GROUP BY sub_status`
+    `SELECT sub_status, COUNT(*) as count FROM orders ${subWhere} GROUP BY sub_status`
   ).bind(...params).all()
 
   const byStatus: Record<string, number> = {}
