@@ -7,7 +7,7 @@ import { getCachedCarrierData, getCarrierData } from '@/data/carrierLoader'
 import { resolveCarrierName } from '@/config/carrierConfig'
 
 const SUB_STATUS_TO_PHASE: Record<string, EventPhase> = {
-  InfoReceived: 'pickup',
+  InfoReceived: 'info',
   InTransit_PickedUp: 'pickup',
   InTransit_Departure: 'export',
   InTransit_Arrival: 'arrival',
@@ -26,7 +26,7 @@ function mapPhase(mainStatus: string, subStatus: string): EventPhase {
   if (mainStatus === 'OutForDelivery') return 'delivery'
   if (mainStatus === 'AvailableForPickup') return 'pickup_point'
   if (mainStatus === 'Delivered') return 'delivered'
-  if (mainStatus === 'InfoReceived') return 'pickup'
+  if (mainStatus === 'InfoReceived') return 'info'
   return 'transit'
 }
 

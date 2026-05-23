@@ -42,6 +42,7 @@ export type TrackSubStatus17 =
   | 'Exception_Cancel'
 
 export type EventPhase =
+  | 'info'
   | 'pickup'
   | 'export'
   | 'customs'
@@ -332,6 +333,7 @@ export const CATEGORY_SUBTYPES: Record<ExceptionCategory, ExceptionSubType[]> = 
 export const CARRIERS = ['DHL', 'FedEx', 'UPS', 'EMS', '云途', '递四方'] as const
 
 export const PHASE_LABELS: Record<EventPhase, string> = {
+  info: '收到信息',
   pickup: '揽收',
   export: '出境',
   customs: '清关',

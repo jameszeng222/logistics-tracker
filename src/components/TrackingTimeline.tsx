@@ -86,6 +86,8 @@ export default function TrackingTimeline({ order }: TrackingTimelineProps) {
                   ? 'border-blue-500 bg-blue-100 animate-pulse-glow'
                   : event.phase === 'delivered'
                   ? 'border-emerald-500 bg-emerald-500'
+                  : event.phase === 'info'
+                  ? 'border-slate-200 bg-slate-100'
                   : 'border-slate-300 bg-white'
               }`}
             >
@@ -93,9 +95,9 @@ export default function TrackingTimeline({ order }: TrackingTimelineProps) {
                 <Check className="absolute top-[-3px] left-[-3px] w-4 h-4 text-white" />
               )}
             </div>
-            <div className="bg-slate-50 rounded-xl p-3">
+            <div className={event.phase === 'info' ? 'bg-slate-50/50 rounded-xl p-3' : 'bg-slate-50 rounded-xl p-3'}>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-semibold text-blue-600">
+                <span className={`text-xs font-semibold ${event.phase === 'info' ? 'text-slate-400' : 'text-blue-600'}`}>
                   {PHASE_LABELS[event.phase]}
                 </span>
                 <span className="text-[10px] text-slate-400">{event.timestamp}</span>

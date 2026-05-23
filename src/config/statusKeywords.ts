@@ -81,10 +81,40 @@ export function saveStatusKeywordRules(rules: StatusKeywordRule[]): void {
 }
 
 export function findEventByStatusKey(
-  events: { timestamp: string; description: string }[],
+  events: { timestamp: string; description: string; subStatus?: string }[],
   statusKey: string,
   rules?: StatusKeywordRule[],
 ): { timestamp: string; description: string } | null {
+  if (statusKey === 'online') {
+    const pickedUp = events.find((e) => e.subStatus === 'InTransit_PickedUp')
+    if (pickedUp) return pickedUp
+  }
+
+  if (statusKey === 'customs_in') {
+    const ci = events.find((e) => e.subStatus === 'InTransit_CustomsProcessing' || e.subStatus === 'InTransit_CustomsRequiringInformation')
+    if (ci) return ci
+  }
+
+  if (statusKey === 'customs_out') {
+    const co = events.find((e) => e.subStatus === 'InTransit_CustomsReleased')
+    if (co) return co
+  }
+
+  if (statusKey === 'delivery') {
+    const dl = events.find((e) => e.subStatus === 'OutForDelivery_Other' || e.status === 'OutForDelivery')
+    if (dl) return dl
+  }
+
+  if (statusKey === 'delivered') {
+    const dv = events.find((e) => e.subStatus === 'Delivered_Other' || e.status === 'Delivered')
+    if (dv) return dv
+  }
+
+  if (statusKey === 'returning') {
+    const rt = events.find((e) => e.subStatus === 'Exception_Returning')
+    if (rt) return rt
+  }
+
   const ruleList = rules || loadStatusKeywordRules()
   const matchedRules = ruleList.filter((r) => r.enabled && r.statusKey === statusKey)
   if (matchedRules.length === 0) return null
@@ -101,7 +131,7 @@ export function findEventByStatusKey(
 }
 
 export function getOnlineTime(
-  events: { timestamp: string; description: string }[],
+  events: { timestamp: string; description: string; subStatus?: string }[],
   rules?: StatusKeywordRule[],
 ): string | null {
   const result = findEventByStatusKey(events, 'online', rules)
