@@ -38,7 +38,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   if (endpoint === "test") {
-    return handleTest(context.env)
+    return handleTest(context.request, context.env)
   }
 
   if (!ALLOWED_ENDPOINTS.includes(endpoint)) {
@@ -74,10 +74,11 @@ async function handleProxy(request: Request, env: Env, endpoint: string): Promis
   }
 }
 
-async function handleTest(env: Env): Promise<Response> {
-  const apiKey = env.TRACK17_API_KEY
+async function handleTest(request: Request, env: Env): Promise<Response> {
+  const clientToken = request.headers.get("17token")
+  const apiKey = clientToken || env.TRACK17_API_KEY
   if (!apiKey) {
-    return json({ success: false, message: "未配置 TRACK17_API_KEY" })
+    return json({ success: false, message: "未配置 TRACK17_API_KEY，请在前端API管理页面配置密钥" })
   }
 
   try {
