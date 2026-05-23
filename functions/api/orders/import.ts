@@ -19,7 +19,7 @@ const UPSERT_SQL = `INSERT INTO orders (
 )
 ON CONFLICT(id) DO UPDATE SET
   tracking_number = excluded.tracking_number,
-  carrier = excluded.carrier,
+  carrier = CASE WHEN excluded.erp_logistics_provider_display != '' THEN excluded.erp_logistics_provider_display WHEN excluded.carrier != '' THEN excluded.carrier ELSE orders.carrier END,
   destination_country = excluded.destination_country,
   ship_date = excluded.ship_date,
   erp_order_no = excluded.erp_order_no,
@@ -45,7 +45,7 @@ function buildStmt(db: D1Database, r: Record<string, string>) {
     id,
     id,
     trackingNumber,
-    String(r.logisticsProvider || '').trim(),
+    String(r.logisticsProviderDisplayName || r.logisticsProvider || '').trim(),
     String(r.destinationCountry || '').trim(),
     String(r.checkoutTime || '').trim(),
     orderNo,

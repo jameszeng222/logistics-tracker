@@ -79,7 +79,7 @@ function SkeletonBars() {
 }
 
 export default function Dashboard() {
-  const [filters] = useState<StatsFilterParams>({ country: 'US' })
+  const [filters] = useState<StatsFilterParams>({})
   const [kpi, setKpi] = useState<KpiResult | null>(null)
   const [statusDist, setStatusDist] = useState<StatusDistributionResult | null>(null)
   const [carrierStats, setCarrierStats] = useState<CarrierStatsItem[]>([])

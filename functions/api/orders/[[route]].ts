@@ -134,7 +134,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
            ON CONFLICT(id) DO UPDATE SET
              order_id = CASE WHEN excluded.order_id != '' THEN excluded.order_id ELSE orders.order_id END,
              tracking_number = CASE WHEN excluded.tracking_number != '' THEN excluded.tracking_number ELSE orders.tracking_number END,
-             carrier = CASE WHEN excluded.carrier != '' THEN excluded.carrier ELSE orders.carrier END,
+             carrier = CASE WHEN excluded.erp_logistics_provider_display != '' THEN excluded.erp_logistics_provider_display WHEN excluded.carrier != '' THEN excluded.carrier ELSE orders.carrier END,
              carrier_code = COALESCE(excluded.carrier_code, orders.carrier_code),
              origin = CASE WHEN excluded.origin != '' THEN excluded.origin ELSE orders.origin END,
              destination = CASE WHEN excluded.destination != '' THEN excluded.destination ELSE orders.destination END,

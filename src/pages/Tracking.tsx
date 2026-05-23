@@ -59,8 +59,8 @@ function getSlaDays(order: LogisticsOrder): number {
 function exportToCSV(orders: LogisticsOrder[], filename: string) {
   const BOM = '\uFEFF'
   const headers = [
-    '订单号', '追踪号', '承运商', '物流服务商', '渠道', '目的地', '目的国家',
-    '主状态', '发货仓库', '发货团队',
+    '订单号', '追踪号', '承运商', '物流服务商', '渠道', '目的地',
+    '主状态', '仓库',
     'ERP出库时间', '签收时间', '实际时效(天)', '达标时效(天)',
   ]
   const rows = orders.map((o) => {
@@ -70,13 +70,11 @@ function exportToCSV(orders: LogisticsOrder[], filename: string) {
       o.orderId,
       o.trackingNumber,
       o.carrier,
-      o.erpInfo?.logisticsProviderDisplayName || '',
+      o.erpInfo?.logisticsProviderDisplayName || o.erpInfo?.logisticsProvider || '',
       o.erpInfo?.currentChannel || '',
-      o.destination,
-      o.destinationCountry,
+      o.destinationCountry || o.destination || '',
       STATUS_LABELS[o.status],
-      o.erpInfo?.warehouse || '',
-      o.erpInfo?.team || '',
+      o.erpInfo?.warehouse || o.erpInfo?.warehouseCode || '',
       o.erpInfo?.shippedAt || o.shipDate || '',
       o.deliveryDate || '',
       actual !== null ? String(actual) : '-',
@@ -105,7 +103,7 @@ export default function Tracking() {
 
   const [batchText, setBatchText] = useState('')
   const [carrierFilter, setCarrierFilter] = useState('')
-  const [countryFilter, setCountryFilter] = useState('US')
+  const [countryFilter, setCountryFilter] = useState('')
   const [timeField, setTimeField] = useState<TimeField>('shippedAt')
   const [timeStart, setTimeStart] = useState('')
   const [timeEnd, setTimeEnd] = useState('')
@@ -215,7 +213,7 @@ export default function Tracking() {
   const resetFilters = useCallback(() => {
     setBatchText('')
     setCarrierFilter('')
-    setCountryFilter('US')
+    setCountryFilter('')
     setTimeField('shippedAt')
     setTimeStart('')
     setTimeEnd('')
@@ -382,6 +380,7 @@ export default function Tracking() {
                   <th className="text-left px-5 py-3.5 font-medium">承运商</th>
                   <th className="text-left px-5 py-3.5 font-medium">物流服务商</th>
                   <th className="text-left px-5 py-3.5 font-medium">目的地</th>
+                  <th className="text-left px-5 py-3.5 font-medium">仓库</th>
                   <th className="text-left px-5 py-3.5 font-medium">状态</th>
                   <th className="text-left px-5 py-3.5 font-medium">出库时间</th>
                   <th className="text-left px-5 py-3.5 font-medium">渠道</th>
@@ -393,7 +392,7 @@ export default function Tracking() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-20 text-slate-300">
+                    <td colSpan={12} className="text-center py-20 text-slate-300">
                       <div className="flex flex-col items-center gap-2">
                         <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
                         <span>加载中...</span>
@@ -414,7 +413,8 @@ export default function Tracking() {
                       <td className="px-5 py-3.5 text-slate-400 font-mono text-xs">{o.trackingNumber}</td>
                       <td className="px-5 py-3.5 text-slate-500">{o.carrier}</td>
                       <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.logisticsProviderDisplayName || o.erpInfo?.logisticsProvider || '-'}</td>
-                      <td className="px-5 py-3.5 text-slate-500">{o.destination}</td>
+                      <td className="px-5 py-3.5 text-slate-500">{o.destinationCountry || o.destination || '-'}</td>
+                      <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.warehouse || o.erpInfo?.warehouseCode || '-'}</td>
                       <td className="px-5 py-3.5"><StatusBadge status={o.status} /></td>
                       <td className="px-5 py-3.5 text-slate-400 text-xs">{o.erpInfo?.shippedAt || o.shipDate || '-'}</td>
                       <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.currentChannel || '-'}</td>
@@ -443,7 +443,7 @@ export default function Tracking() {
                 })}
                 {!loading && orders.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="text-center py-20 text-slate-300">
+                    <td colSpan={12} className="text-center py-20 text-slate-300">
                       <div className="flex flex-col items-center gap-2">
                         <Search className="w-8 h-8 text-slate-200" />
                         <span>暂无匹配订单</span>
@@ -537,18 +537,16 @@ export default function Tracking() {
                 </div>
                 <DetailRow label="承运商" value={selectedOrder.carrier} icon={<Truck className="w-3.5 h-3.5" />} />
                 <DetailRow label="始发地" value={selectedOrder.origin} />
-                <DetailRow label="目的地" value={selectedOrder.destination} icon={<MapPin className="w-3.5 h-3.5" />} />
-                <DetailRow label="目的国家" value={selectedOrder.destinationCountry} />
+                <DetailRow label="目的地" value={[selectedOrder.destinationCountry, selectedOrder.destination].filter(Boolean).join(' · ') || '-'} icon={<MapPin className="w-3.5 h-3.5" />} />
                 <DetailRow label="发货日期" value={selectedOrder.shipDate} icon={<Calendar className="w-3.5 h-3.5" />} />
                 {selectedOrder.deliveryDate && <DetailRow label="妥投日期" value={selectedOrder.deliveryDate} />}
                 <DetailRow label="重量" value={`${selectedOrder.weight}kg`} />
-                {selectedOrder.erpInfo?.warehouseCode && <DetailRow label="仓库代码" value={selectedOrder.erpInfo.warehouseCode} />}
-                {selectedOrder.erpInfo?.warehouse && <DetailRow label="发货仓库" value={selectedOrder.erpInfo.warehouse} />}
+                <DetailRow label="仓库" value={[selectedOrder.erpInfo?.warehouse, selectedOrder.erpInfo?.warehouseCode].filter(Boolean).join(' · ') || '-'} />
                 {selectedOrder.erpInfo?.team && <DetailRow label="团队" value={selectedOrder.erpInfo.team} />}
                 {selectedOrder.erpInfo?.platform && <DetailRow label="平台" value={selectedOrder.erpInfo.platform} />}
                 {selectedOrder.erpInfo?.shippingQty !== undefined && <DetailRow label="发货数量" value={String(selectedOrder.erpInfo.shippingQty)} />}
                 {selectedOrder.erpInfo?.logisticsProvider && <DetailRow label="物流服务商" value={selectedOrder.erpInfo.logisticsProvider} />}
-                {selectedOrder.erpInfo?.logisticsProviderDisplayName && <DetailRow label="C端物流商" value={selectedOrder.erpInfo.logisticsProviderDisplayName} />}
+                {selectedOrder.erpInfo?.logisticsProviderDisplayName && selectedOrder.erpInfo.logisticsProviderDisplayName !== selectedOrder.erpInfo?.logisticsProvider && <DetailRow label="C端物流商" value={selectedOrder.erpInfo.logisticsProviderDisplayName} />}
                 {selectedOrder.erpInfo?.currentChannel && <DetailRow label="当前渠道" value={selectedOrder.erpInfo.currentChannel} />}
                 {selectedOrder.erpInfo?.createdAt && <DetailRow label="创建时间" value={selectedOrder.erpInfo.createdAt} />}
                 {selectedOrder.erpInfo?.paymentTime && <DetailRow label="支付时间" value={selectedOrder.erpInfo.paymentTime} />}
