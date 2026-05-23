@@ -413,8 +413,8 @@ export default function Tracking() {
                       <td className="px-5 py-3.5 text-slate-400 font-mono text-xs">{o.trackingNumber}</td>
                       <td className="px-5 py-3.5 text-slate-500">{o.carrier}</td>
                       <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.logisticsProviderDisplayName || o.erpInfo?.logisticsProvider || '-'}</td>
-                      <td className="px-5 py-3.5 text-slate-500">{o.destinationCountry || o.destination || '-'}</td>
-                      <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.warehouse || o.erpInfo?.warehouseCode || '-'}</td>
+                      <td className="px-5 py-3.5 text-slate-500 text-xs max-w-[120px] truncate" title={o.destinationCountry || o.destination || '-'}>{o.destinationCountry || o.destination || '-'}</td>
+                      <td className="px-5 py-3.5 text-slate-500 text-xs max-w-[100px] truncate" title={o.erpInfo?.warehouse || o.erpInfo?.warehouseCode || '-'}>{o.erpInfo?.warehouse || o.erpInfo?.warehouseCode || '-'}</td>
                       <td className="px-5 py-3.5"><StatusBadge status={o.status} /></td>
                       <td className="px-5 py-3.5 text-slate-400 text-xs">{o.erpInfo?.shippedAt || o.shipDate || '-'}</td>
                       <td className="px-5 py-3.5 text-slate-500 text-xs">{o.erpInfo?.currentChannel || '-'}</td>
@@ -536,12 +536,10 @@ export default function Tracking() {
                   </div>
                 </div>
                 <DetailRow label="承运商" value={selectedOrder.carrier} icon={<Truck className="w-3.5 h-3.5" />} />
-                <DetailRow label="始发地" value={selectedOrder.origin} />
-                <DetailRow label="目的地" value={[selectedOrder.destinationCountry, selectedOrder.destination].filter(Boolean).join(' · ') || '-'} icon={<MapPin className="w-3.5 h-3.5" />} />
+                <DetailRow label="目的地" value={selectedOrder.destinationCountry || selectedOrder.destination || '-'} icon={<MapPin className="w-3.5 h-3.5" />} />
                 <DetailRow label="发货日期" value={selectedOrder.shipDate} icon={<Calendar className="w-3.5 h-3.5" />} />
                 {selectedOrder.deliveryDate && <DetailRow label="妥投日期" value={selectedOrder.deliveryDate} />}
-                <DetailRow label="重量" value={`${selectedOrder.weight}kg`} />
-                <DetailRow label="仓库" value={[selectedOrder.erpInfo?.warehouse, selectedOrder.erpInfo?.warehouseCode].filter(Boolean).join(' · ') || '-'} />
+                <DetailRow label="仓库" value={selectedOrder.erpInfo?.warehouse || selectedOrder.erpInfo?.warehouseCode || '-'} />
                 {selectedOrder.erpInfo?.team && <DetailRow label="团队" value={selectedOrder.erpInfo.team} />}
                 {selectedOrder.erpInfo?.platform && <DetailRow label="平台" value={selectedOrder.erpInfo.platform} />}
                 {selectedOrder.erpInfo?.shippingQty !== undefined && <DetailRow label="发货数量" value={String(selectedOrder.erpInfo.shippingQty)} />}
@@ -551,7 +549,7 @@ export default function Tracking() {
                 {selectedOrder.erpInfo?.createdAt && <DetailRow label="创建时间" value={selectedOrder.erpInfo.createdAt} />}
                 {selectedOrder.erpInfo?.paymentTime && <DetailRow label="支付时间" value={selectedOrder.erpInfo.paymentTime} />}
                 {selectedOrder.erpInfo?.packingTime && <DetailRow label="打包时间" value={selectedOrder.erpInfo.packingTime} />}
-                {selectedOrder.erpInfo?.checkoutTime && <DetailRow label="签出时间" value={selectedOrder.erpInfo.checkoutTime} />}
+                {selectedOrder.erpInfo?.checkoutTime && <DetailRow label="出库时间" value={selectedOrder.erpInfo.checkoutTime} />}
                 <div className="flex items-center justify-between py-1.5">
                   <span className="text-xs text-slate-400">状态</span>
                   <StatusBadge status={selectedOrder.status} />

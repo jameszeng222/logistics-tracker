@@ -1,0 +1,80 @@
+import { X, ExternalLink, Copy, MapPin, Truck, Calendar } from 'lucide-react'
+import type { LogisticsOrder } from '@/types'
+import { getCountryName } from '@/utils/countryNames'
+import StatusBadge from '@/components/StatusBadge'
+import TrackingTimeline from '@/components/TrackingTimeline'
+
+function DetailRow({ label, value, mono, icon }: { label: string; value: string; mono?: boolean; icon?: React.ReactNode }) {
+  if (!value || value === '-') return null
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <span className="text-xs text-slate-400">{label}</span>
+      <span className={`text-sm text-slate-700 flex items-center gap-1.5 ${mono ? 'font-mono text-xs' : ''}`}>{icon}{value}</span>
+    </div>
+  )
+}
+
+interface OrderDetailModalProps {
+  order: LogisticsOrder
+  onClose: () => void
+}
+
+export default function OrderDetailModal({ order, onClose }: OrderDetailModalProps) {
+  const destination = order.destinationCountry
+    ? getCountryName(order.destinationCountry)
+    : order.destination || '-'
+  const warehouse = order.erpInfo?.warehouse || order.erpInfo?.warehouseCode || '-'
+  const logisticsProvider = order.erpInfo?.logisticsProviderDisplayName || order.erpInfo?.logisticsProvider || ''
+  const carrierDisplay = order.carrier || logisticsProvider || '-'
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+        <div className="bg-white rounded-2xl shadow-2xl w-[600px] max-h-[80vh] overflow-y-auto p-6 pointer-events-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-slate-900">物流轨迹 - {order.trackingNumber}</h3>
+            <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
+          </div>
+
+          <div className="space-y-1 mb-4">
+            {order.erpInfo?.orderNo && (
+              <DetailRow label="履约单号" value={order.erpInfo.orderNo} />
+            )}
+            <DetailRow label="追踪号" value={order.trackingNumber} mono icon={
+              <>
+                <a href={`https://t.17track.net/en#nums=${order.trackingNumber}`} target="_blank" rel="noopener noreferrer" className="p-0.5 rounded hover:bg-blue-50 transition-colors">
+                  <ExternalLink className="w-3.5 h-3.5 text-blue-400 hover:text-blue-600" />
+                </a>
+                <button className="p-0.5 rounded hover:bg-slate-100 transition-colors" onClick={() => navigator.clipboard.writeText(order.trackingNumber)} title="复制">
+                  <Copy className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
+                </button>
+              </>
+            } />
+            <DetailRow label="承运商" value={carrierDisplay} icon={<Truck className="w-3.5 h-3.5" />} />
+            {logisticsProvider && logisticsProvider !== carrierDisplay && (
+              <DetailRow label="物流服务商" value={logisticsProvider} />
+            )}
+            <DetailRow label="目的地" value={destination} icon={<MapPin className="w-3.5 h-3.5" />} />
+            <DetailRow label="仓库" value={warehouse} />
+            <DetailRow label="状态" value="" icon={<StatusBadge status={order.status} />} />
+            {order.erpInfo?.currentChannel && (
+              <DetailRow label="渠道" value={order.erpInfo.currentChannel} />
+            )}
+            {order.erpInfo?.platform && (
+              <DetailRow label="平台" value={order.erpInfo.platform} />
+            )}
+            <DetailRow label="发货日期" value={order.shipDate || '-'} icon={<Calendar className="w-3.5 h-3.5" />} />
+            {order.deliveryDate && <DetailRow label="妥投日期" value={order.deliveryDate} />}
+            {order.erpInfo?.createdAt && <DetailRow label="创建时间" value={order.erpInfo.createdAt} />}
+            {order.erpInfo?.checkoutTime && <DetailRow label="出库时间" value={order.erpInfo.checkoutTime} />}
+            {order.erpInfo?.paymentTime && <DetailRow label="支付时间" value={order.erpInfo.paymentTime} />}
+            {order.actualDays != null && <DetailRow label="实际时效" value={`${order.actualDays}天`} />}
+          </div>
+
+          <TrackingTimeline order={order} />
+        </div>
+      </div>
+    </>
+  )
+}

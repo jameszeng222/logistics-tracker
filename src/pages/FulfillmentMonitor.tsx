@@ -16,7 +16,7 @@ import { COUNTRY_NAMES, getCountryName } from '@/utils/countryNames'
 import { STATUS_LABELS } from '@/types'
 import type { OrderStatus, LogisticsOrder } from '@/types'
 import StatusBadge from '@/components/StatusBadge'
-import TrackingTimeline from '@/components/TrackingTimeline'
+import OrderDetailModal from '@/components/OrderDetailModal'
 import {
   fetchMonitoringAlerts, fetchFilterOptions, lookupOrders,
 } from '@/services/d1Api'
@@ -85,7 +85,7 @@ export default function FulfillmentMonitor() {
   const [rules, setRules] = useState<MonitoringRule[]>([])
   const [keywordRules, setKeywordRules] = useState<StatusKeywordRule[]>(loadStatusKeywordRules())
   const [carrierFilter, setCarrierFilter] = useState('')
-  const [countryFilter, setCountryFilter] = useState('US')
+  const [countryFilter, setCountryFilter] = useState('')
   const [timeField, setTimeField] = useState<TimeField>('shippedAt')
   const [timeStart, setTimeStart] = useState('')
   const [timeEnd, setTimeEnd] = useState('')
@@ -203,7 +203,7 @@ export default function FulfillmentMonitor() {
 
   const clearAllFilters = () => {
     setCarrierFilter('')
-    setCountryFilter('US')
+    setCountryFilter('')
     setTimeStart('')
     setTimeEnd('')
     setPage(1)
@@ -923,55 +923,7 @@ export default function FulfillmentMonitor() {
       )}
 
       {trackingOrder && (
-        <>
-          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setTrackingOrder(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl w-[600px] max-h-[80vh] overflow-y-auto p-6 pointer-events-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-slate-900">物流轨迹 - {trackingOrder.trackingNumber}</h3>
-                <button onClick={() => setTrackingOrder(null)}><X className="w-5 h-5 text-slate-400" /></button>
-              </div>
-              <div className="space-y-3 mb-4">
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400">订单号：</span>
-                    <span className="text-slate-900 font-medium">{trackingOrder.orderId}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400">追踪号：</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-900 font-mono text-xs">{trackingOrder.trackingNumber}</span>
-                      <button
-                        className="p-1 rounded hover:bg-slate-100 transition-colors"
-                        onClick={() => { navigator.clipboard.writeText(trackingOrder.trackingNumber) }}
-                        title="复制追踪号"
-                      >
-                        <Copy className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400">承运商：</span>
-                    <span className="text-slate-700">{trackingOrder.carrier}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400">目的地：</span>
-                    <span className="text-slate-700">{trackingOrder.destination}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400">状态：</span>
-                    <StatusBadge status={trackingOrder.status} />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400">国家：</span>
-                    <span className="text-slate-700">{getCountryName(trackingOrder.destinationCountry)}</span>
-                  </div>
-                </div>
-              </div>
-              <TrackingTimeline order={trackingOrder} />
-            </div>
-          </div>
-        </>
+        <OrderDetailModal order={trackingOrder} onClose={() => setTrackingOrder(null)} />
       )}
     </div>
   )

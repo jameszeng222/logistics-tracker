@@ -4,6 +4,7 @@ import type { LogisticsOrder, OrderStatus, TrackingEvent, EventPhase, ExceptionI
 import { EXCEPTION_SUBTYPE_CATEGORY, EXCEPTION_SUBTYPE_LABELS } from '@/types'
 import dayjs from 'dayjs'
 import { getCachedCarrierData, getCarrierData } from '@/data/carrierLoader'
+import { resolveCarrierName } from '@/config/carrierConfig'
 
 const SUB_STATUS_TO_PHASE: Record<string, EventPhase> = {
   InfoReceived: 'pickup',
@@ -155,10 +156,10 @@ function buildException(status: TrackStatus17, subStatus: string, item: any): Ex
 
 export function mapCarrier(carrierCode: number): string {
   const customMap = CarrierMapStore.get()
-  if (customMap[carrierCode]) return customMap[carrierCode]
+  if (customMap[carrierCode]) return resolveCarrierName(customMap[carrierCode])
   const official = getCachedCarrierData()
   const officialName = official?.[String(carrierCode)]
-  if (officialName) return officialName
+  if (officialName) return resolveCarrierName(officialName)
   return `承运商${carrierCode}`
 }
 

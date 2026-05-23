@@ -66,7 +66,7 @@ function SkeletonChart({ height = 300 }: { height?: number }) {
 
 export default function DeliveryDashboard() {
   const [carrierFilter, setCarrierFilter] = useState('')
-  const [countryFilter, setCountryFilter] = useState('US')
+  const [countryFilter, setCountryFilter] = useState('')
   const [timeStart, setTimeStart] = useState('')
   const [timeEnd, setTimeEnd] = useState('')
   const [tab, setTab] = useState<TabKey>('country')
@@ -235,7 +235,7 @@ export default function DeliveryDashboard() {
   const clearAllFilters = () => {
     setTimeStart('')
     setTimeEnd('')
-    setCountryFilter('US')
+    setCountryFilter('')
     setCarrierFilter('')
   }
 
