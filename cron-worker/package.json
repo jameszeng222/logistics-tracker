@@ -1,5 +1,5 @@
 {
-  "name": "logistics-tracker-worker",
+  "name": "logistics-tracker-cron",
   "version": "1.0.0",
   "private": true,
   "scripts": {
