@@ -253,7 +253,7 @@ export function convertTrackInfoToOrder(item: any): LogisticsOrder {
   const latestEvent = getNestedValue(item, 'track_info.latest_event', 'latest_event')
 
   return {
-    orderId: `17T-${item.number}`,
+    orderId: `TN-${item.number}`,
     trackingNumber: item.number,
     carrier,
     origin,
@@ -262,7 +262,7 @@ export function convertTrackInfoToOrder(item: any): LogisticsOrder {
     status,
     shipDate,
     deliveryDate,
-    slaDays: carrier === 'DHL' || carrier === 'FedEx' ? 7 : carrier === 'UPS' ? 10 : 15,
+    slaDays: 20,
     actualDays,
     weight: 0,
     currentLocation: latestEvent?.location || (events.length > 0 ? events[0].location : ''),

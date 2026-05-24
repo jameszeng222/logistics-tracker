@@ -116,7 +116,7 @@ export function checkNotOnline(
   if (rule.type !== 'not_online') return false
   const onlineTime = getOnlineTime(order.events)
   if (onlineTime) return false
-  const baseTime = order.erpInfo?.shippedAt || order.shipDate
+  const baseTime = order.erpInfo?.shippedAt
   if (!baseTime) return false
   const now = Date.now()
   const base = new Date(baseTime).getTime()
@@ -147,7 +147,7 @@ export function checkNotDelivered(
 ): boolean {
   if (rule.type !== 'not_delivered') return false
   if (order.status === 'delivered') return false
-  const baseTime = order.erpInfo?.shippedAt || order.shipDate
+  const baseTime = order.erpInfo?.shippedAt
   if (!baseTime) return false
   const now = Date.now()
   const base = new Date(baseTime).getTime()

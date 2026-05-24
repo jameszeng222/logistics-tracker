@@ -26,11 +26,6 @@ export interface MetricsResult {
 
 function getShipDate(order: LogisticsOrder): string | null {
   if (order.erpInfo?.shippedAt) return order.erpInfo.shippedAt
-  if (order.shipDate) return order.shipDate
-  if (order.events.length > 0) {
-    const last = order.events[order.events.length - 1]
-    if (last?.timestamp) return last.timestamp
-  }
   return null
 }
 

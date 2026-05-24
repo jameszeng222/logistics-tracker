@@ -343,8 +343,10 @@ async function refreshOrders(db: D1Database, apiKey: string, limit = 500): Promi
         db
           .prepare(
             `UPDATE orders SET
-              status = ?, sub_status = ?, events = ?, carrier = ?,
-              carrier_code = ?, delivery_date = ?, actual_days = ?, ship_date = ?,
+              status = ?, sub_status = ?, events = ?,
+              carrier = CASE WHEN orders.erp_logistics_provider_display != '' THEN orders.erp_logistics_provider_display WHEN ? != '' THEN ? ELSE orders.carrier END,
+              carrier_code = COALESCE(?, orders.carrier_code),
+              delivery_date = ?, actual_days = ?, ship_date = ?,
               exception_description = ?, sync_meta = ?, updated_at = datetime('now')
             WHERE tracking_number = ?`
           )
@@ -352,6 +354,7 @@ async function refreshOrders(db: D1Database, apiKey: string, limit = 500): Promi
             parsed.status,
             parsed.sub_status,
             parsed.events,
+            parsed.carrier,
             parsed.carrier,
             parsed.carrier_code,
             parsed.delivery_date,
