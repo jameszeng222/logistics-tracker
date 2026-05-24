@@ -248,7 +248,7 @@ function parseTrackItem(item: TrackInfoItem, oldStatus: string): {
   }
 }
 
-async function refreshOrders(db: D1Database, apiKey: string, limit = 100): Promise<RefreshResult> {
+async function refreshOrders(db: D1Database, apiKey: string, limit = 500): Promise<RefreshResult> {
   const result: RefreshResult = {
     total: 0,
     refreshed: 0,
@@ -408,7 +408,7 @@ export default {
     }
 
     try {
-      const result = await refreshOrders(env.DB, env.TRACK17_API_KEY, 100)
+      const result = await refreshOrders(env.DB, env.TRACK17_API_KEY, 500)
 
       console.log(
         `[Cron] Refresh complete: total=${result.total}, refreshed=${result.refreshed}, ` +

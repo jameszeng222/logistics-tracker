@@ -46,3 +46,19 @@ CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(erp_created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_erp_order_no ON orders(erp_order_no);
 CREATE INDEX IF NOT EXISTS idx_orders_logistics_provider ON orders(erp_logistics_provider);
 CREATE INDEX IF NOT EXISTS idx_orders_current_channel ON orders(erp_current_channel);
+
+CREATE TABLE IF NOT EXISTS monitoring_rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1,
+  country TEXT DEFAULT '*',
+  primary_carrier_id TEXT DEFAULT '*',
+  secondary_channel_id TEXT DEFAULT '*',
+  hours_threshold INTEGER DEFAULT 0,
+  time_base TEXT DEFAULT 'shippedAt',
+  keywords TEXT DEFAULT '[]',
+  match_mode TEXT DEFAULT 'any',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);

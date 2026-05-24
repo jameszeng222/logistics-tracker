@@ -1,4 +1,5 @@
 import type { LogisticsOrder } from '@/types'
+import type { MonitoringRule } from '@/config/monitoringConfig'
 
 const API_BASE = '/api/orders'
 const STATS_BASE = '/api/orders/stats'
@@ -336,19 +337,61 @@ export async function fetchCarrierP90(params: StatsFilterParams = {}): Promise<C
 
 export async function fetchMonitoringAlerts(
   params: StatsFilterParams & { limit?: number; offset?: number } = {},
-  rules: any[] = [],
-  keywordRules: any[] = [],
 ): Promise<MonitoringAlertsResult> {
   const qs = new URLSearchParams()
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== '') qs.set(k, String(v))
   })
-  const res = await fetch(`${STATS_BASE}/monitoring-alerts${qs ? '?' + qs : ''}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rules, keywordRules }),
-  })
+  const res = await fetch(`${STATS_BASE}/monitoring-alerts${qs ? '?' + qs : ''}`)
   const data = await res.json()
   if (!data.success) throw new Error(data.error || 'Failed to fetch monitoring alerts')
   return { alerts: data.alerts, total: data.total, counts: data.counts }
+}
+
+export async function fetchMonitoringRules(): Promise<MonitoringRule[]> {
+  const res = await fetch('/api/monitoring-rules')
+  const data = await res.json()
+  if (!data.success) throw new Error(data.error || 'Failed to fetch monitoring rules')
+  return data.rules.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    enabled: !!r.enabled,
+    country: r.country || '*',
+    primaryCarrierId: r.primary_carrier_id || '*',
+    secondaryChannelId: r.secondary_channel_id || '*',
+    hoursThreshold: r.hours_threshold || 0,
+    timeBase: r.time_base || 'shippedAt',
+    keywords: JSON.parse(r.keywords || '[]'),
+    matchMode: r.match_mode || 'any',
+  }))
+}
+
+export async function saveMonitoringRulesToD1(rules: MonitoringRule[]): Promise<void> {
+  const rows = rules.map((r) => ({
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    enabled: r.enabled ? 1 : 0,
+    country: r.country,
+    primary_carrier_id: r.primaryCarrierId,
+    secondary_channel_id: r.secondaryChannelId,
+    hours_threshold: r.hoursThreshold,
+    time_base: r.timeBase,
+    keywords: JSON.stringify(r.keywords),
+    match_mode: r.matchMode,
+  }))
+  const res = await fetch('/api/monitoring-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rules: rows }),
+  })
+  const data = await res.json()
+  if (!data.success) throw new Error(data.error || 'Failed to save monitoring rules')
+}
+
+export async function resetMonitoringRulesToDefault(): Promise<void> {
+  const res = await fetch('/api/monitoring-rules/reset', { method: 'POST' })
+  const data = await res.json()
+  if (!data.success) throw new Error(data.error || 'Failed to reset monitoring rules')
 }

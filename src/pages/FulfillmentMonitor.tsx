@@ -19,6 +19,7 @@ import StatusBadge from '@/components/StatusBadge'
 import OrderDetailModal from '@/components/OrderDetailModal'
 import {
   fetchMonitoringAlerts, fetchFilterOptions, lookupOrders,
+  fetchMonitoringRules, saveMonitoringRulesToD1, resetMonitoringRulesToDefault,
 } from '@/services/d1Api'
 import type { MonitoringAlertItem, FilterOptions, MonitoringAlertsResult } from '@/services/d1Api'
 
@@ -103,7 +104,9 @@ export default function FulfillmentMonitor() {
   const [rulesVersion, setRulesVersion] = useState(0)
 
   useEffect(() => {
-    setRules(loadMonitoringRules())
+    fetchMonitoringRules().then(setRules).catch(() => {
+      setRules(loadMonitoringRules())
+    })
   }, [])
 
   useEffect(() => {
@@ -123,7 +126,7 @@ export default function FulfillmentMonitor() {
       if (timeStart) params.timeStart = timeStart
       if (timeEnd) params.timeEnd = timeEnd
 
-      const result = await fetchMonitoringAlerts(params, rules.filter((r) => r.enabled), keywordRules.filter((r) => r.enabled))
+      const result = await fetchMonitoringAlerts(params)
       setAlerts(result.alerts)
       setTotalAlerts(result.total)
       setCounts(result.counts)
@@ -134,7 +137,7 @@ export default function FulfillmentMonitor() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, countryFilter, carrierFilter, timeField, timeStart, timeEnd, rules, keywordRules, rulesVersion])
+  }, [page, pageSize, countryFilter, carrierFilter, timeField, timeStart, timeEnd, rulesVersion])
 
   useEffect(() => {
     if (activeTab === 'overview') {
@@ -172,13 +175,25 @@ export default function FulfillmentMonitor() {
     setRules((prev) => prev.filter((r) => r.id !== id))
   }
 
-  const restoreDefaults = () => {
-    setRules([...DEFAULT_MONITORING_RULES])
+  const restoreDefaults = async () => {
+    try {
+      await resetMonitoringRulesToDefault()
+      const freshRules = await fetchMonitoringRules()
+      setRules(freshRules)
+    } catch {
+      setRules([...DEFAULT_MONITORING_RULES])
+    }
+    setRulesVersion((v) => v + 1)
   }
 
-  const handleSave = () => {
-    saveMonitoringRules(rules)
-    setRulesVersion((v) => v + 1)
+  const handleSave = async () => {
+    try {
+      await saveMonitoringRulesToD1(rules)
+      setRulesVersion((v) => v + 1)
+    } catch {
+      saveMonitoringRules(rules)
+      setRulesVersion((v) => v + 1)
+    }
   }
 
   const handleSaveKeywords = () => {

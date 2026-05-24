@@ -8,7 +8,7 @@ crons = ["0 */4 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "logistics-tracker-db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "eca649bb-bd7b-43c5-be4f-6102a2df41c9"
 
 [vars]
 ENVIRONMENT = "production"

@@ -83,21 +83,6 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
   const db = ctx.env.DB
 
   try {
-    const tableInfo = await db.prepare("PRAGMA table_info(orders)").all()
-    const existingColumns = new Set(tableInfo.results.map((r: any) => r.name))
-    const requiredColumns = [
-      'erp_warehouse_code', 'erp_platform', 'erp_shipping_qty', 'erp_payment_time',
-      'erp_packing_time', 'erp_checkout_time', 'erp_logistics_provider',
-      'erp_logistics_provider_display', 'erp_current_channel', 'erp_order_no',
-      'erp_created_at', 'erp_shipped_at', 'erp_warehouse', 'erp_team', 'sub_status',
-    ]
-    for (const col of requiredColumns) {
-      if (!existingColumns.has(col)) {
-        const colType = col === 'erp_shipping_qty' ? 'INTEGER DEFAULT 0' : "TEXT DEFAULT ''"
-        try { await db.prepare(`ALTER TABLE orders ADD COLUMN ${col} ${colType}`).run() } catch {}
-      }
-    }
-
     const body = await ctx.request.json() as { rows: Array<Record<string, string>> }
     if (!body.rows?.length) {
       return Response.json({ success: false, error: 'No rows provided' }, { status: 400, headers: corsHeaders })

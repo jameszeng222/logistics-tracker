@@ -278,9 +278,7 @@ async function handleCarrierP90(db: D1Database, where: string, params: any[]) {
   })).sort((a, b) => b.count - a.count)
 }
 
-async function handleMonitoringAlerts(db: D1Database, url: URL, body: any) {
-  const rules: any[] = body?.rules || []
-  const keywordRules: any[] = body?.keywordRules || []
+async function handleMonitoringAlerts(db: D1Database, url: URL) {
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500)
   const offset = parseInt(url.searchParams.get('offset') || '0')
 
@@ -296,7 +294,11 @@ async function handleMonitoringAlerts(db: D1Database, url: URL, body: any) {
   const alertMap = new Map<string, any>()
   const alertCounts = { not_shipped: 0, not_online: 0, not_delivered: 0, keyword: 0 }
 
-  const enabledRules = rules.filter((r: any) => r.enabled)
+  const rulesRows = await db.prepare('SELECT * FROM monitoring_rules WHERE enabled = 1').all()
+  const enabledRules = rulesRows.results.map((r: any) => ({
+    ...r,
+    keywords: JSON.parse(r.keywords || '[]'),
+  }))
 
   for (const rule of enabledRules) {
     const ruleConds = [...conditions]
@@ -318,7 +320,7 @@ async function handleMonitoringAlerts(db: D1Database, url: URL, body: any) {
         ${ruleAnd}
         ORDER BY erp_created_at DESC
         LIMIT 500`
-      ).bind(rule.hoursThreshold, ...ruleParams).all()
+      ).bind(rule.hours_threshold, ...ruleParams).all()
 
       for (const r of rows.results) {
         const row = r as any
@@ -335,7 +337,7 @@ async function handleMonitoringAlerts(db: D1Database, url: URL, body: any) {
         ${ruleAnd}
         ORDER BY erp_checkout_time DESC
         LIMIT 500`
-      ).bind(rule.hoursThreshold, ...ruleParams).all()
+      ).bind(rule.hours_threshold, ...ruleParams).all()
 
       for (const r of rows.results) {
         const row = r as any
@@ -352,9 +354,9 @@ async function handleMonitoringAlerts(db: D1Database, url: URL, body: any) {
         ${ruleAnd}
         ORDER BY erp_checkout_time DESC
         LIMIT 500`
-      ).bind(rule.hoursThreshold, ...ruleParams).all()
+      ).bind(rule.hours_threshold, ...ruleParams).all()
 
-      const onlineKeywords = getKeywordsForStatus(keywordRules, 'online')
+      const onlineKeywords = getDefaultOnlineKeywords()
       for (const r of rows.results) {
         const row = r as any
         let events: any[] = []
@@ -382,7 +384,7 @@ async function handleMonitoringAlerts(db: D1Database, url: URL, body: any) {
       ).bind(...ruleParams).all()
 
       const keywords = rule.keywords || []
-      const matchMode = rule.matchMode || 'any'
+      const matchMode = rule.match_mode || 'any'
       for (const r of rows.results) {
         const row = r as any
         let events: any[] = []
@@ -428,12 +430,8 @@ function addAlert(map: Map<string, any>, row: any, ruleName: string, alertType: 
   }
 }
 
-function getKeywordsForStatus(keywordRules: any[], statusKey: string): string[] {
-  const defaultOnlineKeywords = ['pick up', 'picked up', 'collected', 'received by carrier', 'accepted']
-  if (!keywordRules || keywordRules.length === 0) return defaultOnlineKeywords
-  const rule = keywordRules.find((r: any) => r.statusKey === statusKey && r.enabled)
-  if (rule && rule.keywords && rule.keywords.length > 0) return rule.keywords
-  return defaultOnlineKeywords
+function getDefaultOnlineKeywords(): string[] {
+  return ['pick up', 'picked up', 'collected', 'received by carrier', 'accepted']
 }
 
 export const onRequest = [async (ctx: EventContext<Env, string, Record<string, unknown>>) => {
@@ -453,8 +451,7 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
 
   try {
     if (path === 'monitoring-alerts') {
-      const body = method === 'POST' ? await ctx.request.json() : {}
-      const result = await handleMonitoringAlerts(db, url, body)
+      const result = await handleMonitoringAlerts(db, url)
       return Response.json({ success: true, ...result }, { headers: corsHeaders })
     }
 

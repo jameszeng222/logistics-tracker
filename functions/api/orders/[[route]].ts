@@ -108,18 +108,6 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
         return Response.json({ success: false, error: 'No orders provided' }, { status: 400, headers: corsHeaders })
       }
 
-      try {
-        const tableInfo = await db.prepare("PRAGMA table_info(orders)").all()
-        const existingCols = new Set(tableInfo.results.map((r: any) => r.name))
-        const requiredCols = ['erp_warehouse_code','erp_platform','erp_shipping_qty','erp_payment_time','erp_packing_time','erp_checkout_time','erp_logistics_provider','erp_logistics_provider_display','erp_current_channel','erp_order_no','erp_created_at','erp_shipped_at','erp_warehouse','erp_team','sub_status']
-        for (const col of requiredCols) {
-          if (!existingCols.has(col)) {
-            const t = col === 'erp_shipping_qty' ? 'INTEGER DEFAULT 0' : "TEXT DEFAULT ''"
-            try { await db.prepare(`ALTER TABLE orders ADD COLUMN ${col} ${t}`).run() } catch {}
-          }
-        }
-      } catch {}
-
       const stmts = body.orders.map((o: any) => {
         const id = o.trackingNumber ? `TN-${o.trackingNumber}` : (o.id || o.orderId)
         const events = typeof o.events === 'string' ? o.events : JSON.stringify(o.events || [])
