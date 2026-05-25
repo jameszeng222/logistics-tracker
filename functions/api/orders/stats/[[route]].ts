@@ -279,6 +279,22 @@ async function handleCarrierP90(db: D1Database, where: string, params: any[]) {
 }
 
 async function handleMonitoringAlerts(db: D1Database, url: URL) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS monitoring_rules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    country TEXT DEFAULT '*',
+    primary_carrier_id TEXT DEFAULT '*',
+    secondary_channel_id TEXT DEFAULT '*',
+    hours_threshold INTEGER DEFAULT 0,
+    time_base TEXT DEFAULT 'shippedAt',
+    keywords TEXT DEFAULT '[]',
+    match_mode TEXT DEFAULT 'any',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`).run()
+
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500)
   const offset = parseInt(url.searchParams.get('offset') || '0')
 
@@ -361,14 +377,19 @@ async function handleMonitoringAlerts(db: D1Database, url: URL) {
         const row = r as any
         let events: any[] = []
         try { events = JSON.parse(row.events || '[]') } catch {}
-        const hasOnline = onlineKeywords.length === 0
+        const hasOnlineSubStatus = events.some((e: any) =>
+          (e.subStatus || e.sub_status || '').includes('PickedUp') ||
+          (e.subStatus || e.sub_status || '').includes('Departure') ||
+          (e.subStatus || e.sub_status || '').includes('Arrival')
+        )
+        const hasOnlineKeyword = onlineKeywords.length === 0
           ? false
           : events.some((e: any) =>
               onlineKeywords.some((kw: string) =>
                 (e.description || '').toLowerCase().includes(kw.toLowerCase())
               )
             )
-        if (!hasOnline) {
+        if (!hasOnlineSubStatus && !hasOnlineKeyword) {
           alertCounts.not_online++
           addAlert(alertMap, row, rule.name, 'not_online')
         }

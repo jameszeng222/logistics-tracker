@@ -19,6 +19,30 @@ const STATUS_17_TO_INTERNAL: Record<string, string> = {
   Exception: "exception",
 }
 
+const SUB_STATUS_TO_PHASE: Record<string, string> = {
+  InfoReceived: "info",
+  InTransit_PickedUp: "pickup",
+  InTransit_Departure: "export",
+  InTransit_Arrival: "arrival",
+  InTransit_CustomsProcessing: "customs",
+  InTransit_CustomsReleased: "customs",
+  InTransit_CustomsRequiringInformation: "customs",
+  InTransit_Other: "transit",
+  OutForDelivery_Other: "delivery",
+  AvailableForPickup_Other: "pickup_point",
+  Delivered_Other: "delivered",
+}
+
+function mapPhase(mainStatus: string, subStatus: string): string {
+  if (SUB_STATUS_TO_PHASE[subStatus]) return SUB_STATUS_TO_PHASE[subStatus]
+  if (mainStatus === "InTransit") return "transit"
+  if (mainStatus === "OutForDelivery") return "delivery"
+  if (mainStatus === "AvailableForPickup") return "pickup_point"
+  if (mainStatus === "Delivered") return "delivered"
+  if (mainStatus === "InfoReceived") return "info"
+  return "transit"
+}
+
 const SUB_STATUS_EXCEPTION_TYPES: Record<string, string> = {
   Exception_Returning: "return",
   Exception_Returned: "return",
@@ -186,13 +210,18 @@ function parseTrackItem(item: TrackInfoItem, oldStatus: string): {
 
   const allEvents = extractAllEvents(item)
   const events = JSON.stringify(
-    allEvents.map((e) => ({
-      time: e.time,
-      status: e.status ? mapStatus(e.status) : "",
-      sub_status: e.sub_status || "",
-      location: e.location || "",
-      description: e.description || "",
-    }))
+    allEvents.map((e) => {
+      const evStatus17 = e.status || ""
+      const evSubStatus17 = e.sub_status || ""
+      return {
+        timestamp: e.time,
+        status: evStatus17 ? mapStatus(evStatus17) : "",
+        subStatus: evSubStatus17,
+        location: e.location || "",
+        description: e.description || "",
+        phase: mapPhase(evStatus17, evSubStatus17),
+      }
+    })
   )
 
   const carrier = extractProviderName(item)

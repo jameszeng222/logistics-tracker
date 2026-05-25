@@ -47,6 +47,21 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
 
   try {
     if (method === 'GET') {
+      await db.prepare(`CREATE TABLE IF NOT EXISTS monitoring_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        country TEXT DEFAULT '*',
+        primary_carrier_id TEXT DEFAULT '*',
+        secondary_channel_id TEXT DEFAULT '*',
+        hours_threshold INTEGER DEFAULT 0,
+        time_base TEXT DEFAULT 'shippedAt',
+        keywords TEXT DEFAULT '[]',
+        match_mode TEXT DEFAULT 'any',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`).run()
       const rows = await db.prepare('SELECT * FROM monitoring_rules ORDER BY id').all()
       if (rows.results.length === 0) {
         await seedDefaults(db)
@@ -63,6 +78,21 @@ export const onRequest = [async (ctx: EventContext<Env, string, Record<string, u
     }
 
     if (method === 'POST') {
+      await db.prepare(`CREATE TABLE IF NOT EXISTS monitoring_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        country TEXT DEFAULT '*',
+        primary_carrier_id TEXT DEFAULT '*',
+        secondary_channel_id TEXT DEFAULT '*',
+        hours_threshold INTEGER DEFAULT 0,
+        time_base TEXT DEFAULT 'shippedAt',
+        keywords TEXT DEFAULT '[]',
+        match_mode TEXT DEFAULT 'any',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`).run()
       const body = await ctx.request.json() as { rules: any[] }
       const rules = body.rules || []
       const stmts = [

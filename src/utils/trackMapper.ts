@@ -91,15 +91,13 @@ function extractEvents(item: any): TrackingEvent[] {
     return []
   }
 
-  const mainStatus = getNestedValue(item, 'track_info.latest_status.status', 'latest_status.status') || ''
-
   return rawEvents.map((ev) => ({
     timestamp: parseEventTime(ev),
     location: ev.location || '',
     status: ev.status || '',
     subStatus: ev.sub_status || '',
     description: ev.description || SUB_STATUS_17_LABELS[ev.sub_status] || STATUS_17_LABELS[ev.status as TrackStatus17] || ev.status || '',
-    phase: mapPhase(mainStatus, ev.sub_status || ''),
+    phase: mapPhase(ev.status || '', ev.sub_status || ''),
   }))
 }
 
