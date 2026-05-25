@@ -302,6 +302,7 @@ async function handleMonitoringAlerts(db: D1Database, url: URL) {
   const params: any[] = []
   const country = url.searchParams.get('country')
   const carrier = url.searchParams.get('carrier')
+  const alertType = url.searchParams.get('alertType')
 
   if (country) { conditions.push('destination_country = ?'); params.push(country) }
   if (carrier) { conditions.push('carrier = ?'); params.push(carrier) }
@@ -311,10 +312,13 @@ async function handleMonitoringAlerts(db: D1Database, url: URL) {
   const alertCounts = { not_shipped: 0, not_online: 0, not_delivered: 0, keyword: 0 }
 
   const rulesRows = await db.prepare('SELECT * FROM monitoring_rules WHERE enabled = 1').all()
-  const enabledRules = rulesRows.results.map((r: any) => ({
+  let enabledRules = rulesRows.results.map((r: any) => ({
     ...r,
     keywords: JSON.parse(r.keywords || '[]'),
   }))
+  if (alertType) {
+    enabledRules = enabledRules.filter((r: any) => r.type === alertType)
+  }
 
   for (const rule of enabledRules) {
     const ruleConds = [...conditions]
@@ -340,8 +344,17 @@ async function handleMonitoringAlerts(db: D1Database, url: URL) {
 
       for (const r of rows.results) {
         const row = r as any
+        const createdTime = row.erp_created_at || ''
+        const actualHours = createdTime ? (Date.now() - new Date(createdTime.replace(' ', 'T')).getTime()) / 3600000 : 0
+        const overtimeHours = Math.max(0, actualHours - rule.hours_threshold)
         alertCounts.not_shipped++
-        addAlert(alertMap, row, rule.name, 'not_shipped')
+        addAlert(alertMap, row, rule.name, 'not_shipped', {
+          checkoutTime: '',
+          onlineTime: '',
+          hoursThreshold: rule.hours_threshold,
+          actualHours: Math.round(actualHours * 10) / 10,
+          overtimeHours: Math.round(overtimeHours * 10) / 10,
+        })
       }
     } else if (rule.type === 'not_delivered') {
       const rows = await db.prepare(
@@ -357,8 +370,17 @@ async function handleMonitoringAlerts(db: D1Database, url: URL) {
 
       for (const r of rows.results) {
         const row = r as any
+        const checkoutTime = row.erp_checkout_time || ''
+        const actualHours = checkoutTime ? (Date.now() - new Date(checkoutTime.replace(' ', 'T')).getTime()) / 3600000 : 0
+        const overtimeHours = Math.max(0, actualHours - rule.hours_threshold)
         alertCounts.not_delivered++
-        addAlert(alertMap, row, rule.name, 'not_delivered')
+        addAlert(alertMap, row, rule.name, 'not_delivered', {
+          checkoutTime,
+          onlineTime: '',
+          hoursThreshold: rule.hours_threshold,
+          actualHours: Math.round(actualHours * 10) / 10,
+          overtimeHours: Math.round(overtimeHours * 10) / 10,
+        })
       }
     } else if (rule.type === 'not_online') {
       const rows = await db.prepare(
@@ -390,8 +412,17 @@ async function handleMonitoringAlerts(db: D1Database, url: URL) {
               )
             )
         if (!hasOnlineSubStatus && !hasOnlineKeyword) {
+          const checkoutTime = row.erp_checkout_time || ''
+          const actualHours = checkoutTime ? (Date.now() - new Date(checkoutTime.replace(' ', 'T')).getTime()) / 3600000 : 0
+          const overtimeHours = Math.max(0, actualHours - rule.hours_threshold)
           alertCounts.not_online++
-          addAlert(alertMap, row, rule.name, 'not_online')
+          addAlert(alertMap, row, rule.name, 'not_online', {
+            checkoutTime,
+            onlineTime: '未上网',
+            hoursThreshold: rule.hours_threshold,
+            actualHours: Math.round(actualHours * 10) / 10,
+            overtimeHours: Math.round(overtimeHours * 10) / 10,
+          })
         }
       }
     } else if (rule.type === 'keyword') {
@@ -429,11 +460,13 @@ async function handleMonitoringAlerts(db: D1Database, url: URL) {
   return { alerts: paged, total, counts: alertCounts }
 }
 
-function addAlert(map: Map<string, any>, row: any, ruleName: string, alertType: string) {
+function addAlert(map: Map<string, any>, row: any, ruleName: string, alertType: string, detail?: { checkoutTime: string; onlineTime: string; hoursThreshold: number; actualHours: number; overtimeHours: number }) {
   const existing = map.get(row.order_id)
   if (existing) {
     if (!existing.ruleNames.includes(ruleName)) existing.ruleNames.push(ruleName)
     if (!existing.alertTypes.includes(alertType)) existing.alertTypes.push(alertType)
+    if (detail && !existing.alertDetails) existing.alertDetails = []
+    if (detail) existing.alertDetails.push({ alertType, ...detail })
   } else {
     map.set(row.order_id, {
       orderId: row.order_id,
@@ -447,6 +480,7 @@ function addAlert(map: Map<string, any>, row: any, ruleName: string, alertType: 
       checkoutTime: row.erp_checkout_time || '',
       ruleNames: [ruleName],
       alertTypes: [alertType],
+      alertDetails: detail ? [{ alertType, ...detail }] : [],
     })
   }
 }

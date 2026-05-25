@@ -1,8 +1,28 @@
-import { X, ExternalLink, Copy, MapPin, Truck, Calendar } from 'lucide-react'
+import { X, ExternalLink, Copy, MapPin, Truck, Calendar, AlertTriangle, Clock } from 'lucide-react'
 import type { LogisticsOrder } from '@/types'
+import type { AlertDetail } from '@/services/d1Api'
 import { getCountryName } from '@/utils/countryNames'
 import StatusBadge from '@/components/StatusBadge'
 import TrackingTimeline from '@/components/TrackingTimeline'
+
+const ALERT_TYPE_LABELS: Record<string, string> = {
+  not_shipped: '超时未出库',
+  not_online: '超时未上网',
+  not_delivered: '超时未妥投',
+  keyword: '关键字异常',
+}
+
+const ALERT_TYPE_COLORS: Record<string, string> = {
+  not_shipped: 'bg-orange-50 border-orange-200 text-orange-700',
+  not_online: 'bg-blue-50 border-blue-200 text-blue-700',
+  not_delivered: 'bg-amber-50 border-amber-200 text-amber-700',
+  keyword: 'bg-red-50 border-red-200 text-red-700',
+}
+
+function formatDateTime(dt: string): string {
+  if (!dt) return '-'
+  return dt.replace('T', ' ').substring(0, 19)
+}
 
 function DetailRow({ label, value, mono, icon }: { label: string; value: string; mono?: boolean; icon?: React.ReactNode }) {
   if (!value || value === '-') return null
@@ -17,9 +37,10 @@ function DetailRow({ label, value, mono, icon }: { label: string; value: string;
 interface OrderDetailModalProps {
   order: LogisticsOrder
   onClose: () => void
+  alertDetails?: AlertDetail[]
 }
 
-export default function OrderDetailModal({ order, onClose }: OrderDetailModalProps) {
+export default function OrderDetailModal({ order, onClose, alertDetails }: OrderDetailModalProps) {
   const destination = order.destinationCountry
     ? getCountryName(order.destinationCountry)
     : order.destination || '-'
@@ -71,6 +92,53 @@ export default function OrderDetailModal({ order, onClose }: OrderDetailModalPro
             {order.erpInfo?.paymentTime && <DetailRow label="支付时间" value={order.erpInfo.paymentTime} />}
             {order.actualDays != null && <DetailRow label="实际时效" value={`${order.actualDays}天`} />}
           </div>
+
+          {alertDetails && alertDetails.length > 0 && (
+            <div className="space-y-2 mb-4">
+              <div className="flex items-center gap-1.5 mb-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                <span className="text-sm font-semibold text-slate-800">超时详情</span>
+              </div>
+              {alertDetails.map((d, i) => (
+                <div key={i} className={`rounded-xl border p-3 ${ALERT_TYPE_COLORS[d.alertType] || 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span className="text-xs font-semibold">{ALERT_TYPE_LABELS[d.alertType] || d.alertType}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    {d.alertType === 'not_shipped' && (
+                      <>
+                        <div className="flex justify-between"><span className="opacity-70">创建时间</span><span className="font-medium">{formatDateTime(order.erpInfo?.createdAt || '')}</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">规则阈值</span><span className="font-medium">{d.hoursThreshold}小时</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">已等待</span><span className="font-medium">{d.actualHours}小时</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">已超时</span><span className="font-bold">{d.overtimeHours}小时</span></div>
+                      </>
+                    )}
+                    {d.alertType === 'not_online' && (
+                      <>
+                        <div className="flex justify-between"><span className="opacity-70">出库时间</span><span className="font-medium">{formatDateTime(d.checkoutTime)}</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">上网时间</span><span className="font-medium">{d.onlineTime || '未上网'}</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">规则阈值</span><span className="font-medium">{d.hoursThreshold}小时未上网</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">已等待</span><span className="font-medium">{d.actualHours}小时</span></div>
+                        <div className="flex justify-between col-span-2"><span className="opacity-70">已超时</span><span className="font-bold">{d.overtimeHours}小时</span></div>
+                      </>
+                    )}
+                    {d.alertType === 'not_delivered' && (
+                      <>
+                        <div className="flex justify-between"><span className="opacity-70">出库时间</span><span className="font-medium">{formatDateTime(d.checkoutTime)}</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">规则阈值</span><span className="font-medium">{d.hoursThreshold}小时未妥投</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">已等待</span><span className="font-medium">{d.actualHours}小时</span></div>
+                        <div className="flex justify-between"><span className="opacity-70">已超时</span><span className="font-bold">{d.overtimeHours}小时</span></div>
+                      </>
+                    )}
+                    {d.alertType === 'keyword' && (
+                      <div className="col-span-2 text-xs opacity-80">轨迹中匹配到关键字</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <TrackingTimeline order={order} />
         </div>

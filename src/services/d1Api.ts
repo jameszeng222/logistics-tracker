@@ -169,6 +169,15 @@ export interface CarrierP90Item {
   count: number
 }
 
+export interface AlertDetail {
+  alertType: string
+  checkoutTime: string
+  onlineTime: string
+  hoursThreshold: number
+  actualHours: number
+  overtimeHours: number
+}
+
 export interface MonitoringAlertItem {
   orderId: string
   trackingNumber: string
@@ -181,6 +190,7 @@ export interface MonitoringAlertItem {
   checkoutTime: string
   ruleNames: string[]
   alertTypes: string[]
+  alertDetails: AlertDetail[]
 }
 
 export interface MonitoringAlertsResult {

@@ -21,7 +21,7 @@ import {
   fetchMonitoringAlerts, fetchFilterOptions, lookupOrders,
   fetchMonitoringRules, saveMonitoringRulesToD1, resetMonitoringRulesToDefault,
 } from '@/services/d1Api'
-import type { MonitoringAlertItem, FilterOptions, MonitoringAlertsResult } from '@/services/d1Api'
+import type { MonitoringAlertItem, FilterOptions, MonitoringAlertsResult, AlertDetail } from '@/services/d1Api'
 
 type TimeField = 'createdAt' | 'shippedAt'
 
@@ -87,12 +87,14 @@ export default function FulfillmentMonitor() {
   const [keywordRules, setKeywordRules] = useState<StatusKeywordRule[]>(loadStatusKeywordRules())
   const [carrierFilter, setCarrierFilter] = useState('')
   const [countryFilter, setCountryFilter] = useState('')
+  const [alertTypeFilter, setAlertTypeFilter] = useState('')
   const [timeField, setTimeField] = useState<TimeField>('shippedAt')
   const [timeStart, setTimeStart] = useState('')
   const [timeEnd, setTimeEnd] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(20)
   const [trackingOrder, setTrackingOrder] = useState<LogisticsOrder | null>(null)
+  const [trackingAlertDetails, setTrackingAlertDetails] = useState<AlertDetail[]>([])
   const [loadingTracking, setLoadingTracking] = useState(false)
 
   const [alerts, setAlerts] = useState<MonitoringAlertItem[]>([])
@@ -122,6 +124,7 @@ export default function FulfillmentMonitor() {
       }
       if (countryFilter) params.country = countryFilter
       if (carrierFilter) params.carrier = carrierFilter
+      if (alertTypeFilter) params.alertType = alertTypeFilter
       if (timeField) params.timeField = timeField
       if (timeStart) params.timeStart = timeStart
       if (timeEnd) params.timeEnd = timeEnd
@@ -137,7 +140,7 @@ export default function FulfillmentMonitor() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, countryFilter, carrierFilter, timeField, timeStart, timeEnd, rulesVersion])
+  }, [page, pageSize, countryFilter, carrierFilter, alertTypeFilter, timeField, timeStart, timeEnd, rulesVersion])
 
   useEffect(() => {
     if (activeTab === 'overview') {
@@ -207,6 +210,7 @@ export default function FulfillmentMonitor() {
       const orders = await lookupOrders({ trackingNumbers: [alert.trackingNumber] })
       if (orders.length > 0) {
         setTrackingOrder(orders[0])
+        setTrackingAlertDetails(alert.alertDetails || [])
       }
     } catch {
     } finally {
@@ -214,11 +218,12 @@ export default function FulfillmentMonitor() {
     }
   }
 
-  const hasAnyFilter = !!(carrierFilter || countryFilter || timeStart || timeEnd)
+  const hasAnyFilter = !!(carrierFilter || countryFilter || alertTypeFilter || timeStart || timeEnd)
 
   const clearAllFilters = () => {
     setCarrierFilter('')
     setCountryFilter('')
+    setAlertTypeFilter('')
     setTimeStart('')
     setTimeEnd('')
     setPage(1)
@@ -278,50 +283,35 @@ export default function FulfillmentMonitor() {
       {activeTab === 'overview' && (
         <>
           <div className="grid grid-cols-5 gap-4">
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 font-medium">超时未出库</p>
-                  <p className="text-3xl font-bold text-orange-600 mt-1 tabular-nums">{counts.not_shipped}</p>
+            {([
+              { key: 'not_shipped', label: '超时未出库', count: counts.not_shipped, bgCard: 'bg-orange-50', borderActive: 'border-orange-300 ring-orange-100', textCount: 'text-orange-600', iconBg: 'bg-orange-50', iconText: 'text-orange-500', Icon: Warehouse },
+              { key: 'not_online', label: '超时未上网', count: counts.not_online, bgCard: 'bg-blue-50', borderActive: 'border-blue-300 ring-blue-100', textCount: 'text-blue-600', iconBg: 'bg-blue-50', iconText: 'text-blue-500', Icon: Clock },
+              { key: 'not_delivered', label: '超时未妥投', count: counts.not_delivered, bgCard: 'bg-amber-50', borderActive: 'border-amber-300 ring-amber-100', textCount: 'text-amber-600', iconBg: 'bg-amber-50', iconText: 'text-amber-500', Icon: AlertTriangle },
+              { key: 'keyword', label: '关键字异常', count: counts.keyword, bgCard: 'bg-red-50', borderActive: 'border-red-300 ring-red-100', textCount: 'text-red-600', iconBg: 'bg-red-50', iconText: 'text-red-500', Icon: FileWarning },
+            ] as const).map((card) => (
+              <button
+                key={card.key}
+                className={`bg-white rounded-2xl border shadow-sm p-5 text-left transition-all cursor-pointer ${
+                  alertTypeFilter === card.key
+                    ? card.borderActive + ' ring-2'
+                    : 'border-slate-200/80 hover:border-slate-300'
+                }`}
+                onClick={() => {
+                  setAlertTypeFilter(alertTypeFilter === card.key ? '' : card.key)
+                  setPage(1)
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400 font-medium">{card.label}</p>
+                    <p className={`text-3xl font-bold mt-1 tabular-nums ${card.textCount}`}>{card.count}</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${card.iconBg}`}>
+                    <card.Icon className={`w-5 h-5 ${card.iconText}`} />
+                  </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
-                  <Warehouse className="w-5 h-5 text-orange-500" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 font-medium">超时未上网</p>
-                  <p className="text-3xl font-bold text-blue-600 mt-1 tabular-nums">{counts.not_online}</p>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-blue-500" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 font-medium">超时未妥投</p>
-                  <p className="text-3xl font-bold text-amber-600 mt-1 tabular-nums">{counts.not_delivered}</p>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5 text-amber-500" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 font-medium">关键字异常</p>
-                  <p className="text-3xl font-bold text-red-600 mt-1 tabular-nums">{counts.keyword}</p>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
-                  <FileWarning className="w-5 h-5 text-red-500" />
-                </div>
-              </div>
-            </div>
+              </button>
+            ))}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
               <div className="flex items-center justify-between">
                 <div>
@@ -406,6 +396,12 @@ export default function FulfillmentMonitor() {
               {hasAnyFilter && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] text-slate-400">已选筛选：</span>
+                  {alertTypeFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
+                      类型: {ALERT_TYPE_CONFIG[alertTypeFilter]?.label || alertTypeFilter}
+                      <button onClick={() => { setAlertTypeFilter(''); setPage(1) }}><X className="w-2.5 h-2.5" /></button>
+                    </span>
+                  )}
                   {countryFilter && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-600">
                       国家: {getCountryName(countryFilter)}
@@ -481,7 +477,11 @@ export default function FulfillmentMonitor() {
                   </thead>
                   <tbody>
                     {alerts.map((a) => (
-                      <tr key={a.orderId} className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
+                      <tr
+                        key={a.orderId}
+                        className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors cursor-pointer"
+                        onClick={() => handleViewTracking(a)}
+                      >
                         <td className="py-4 px-5 font-medium text-slate-900 whitespace-nowrap">{a.orderId}</td>
                         <td className="py-4 px-5 text-slate-500 font-mono text-sm">{a.trackingNumber}</td>
                         <td className="py-4 px-5 text-slate-600 whitespace-nowrap">{a.carrier}</td>
@@ -506,14 +506,14 @@ export default function FulfillmentMonitor() {
                           <button
                             className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
                             disabled={loadingTracking}
-                            onClick={() => handleViewTracking(a)}
+                            onClick={(e) => { e.stopPropagation(); handleViewTracking(a) }}
                           >
                             {loadingTracking ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             ) : (
                               <Eye className="w-3.5 h-3.5" />
                             )}
-                            查看轨迹
+                            详情
                           </button>
                         </td>
                       </tr>
@@ -938,7 +938,7 @@ export default function FulfillmentMonitor() {
       )}
 
       {trackingOrder && (
-        <OrderDetailModal order={trackingOrder} onClose={() => setTrackingOrder(null)} />
+        <OrderDetailModal order={trackingOrder} onClose={() => { setTrackingOrder(null); setTrackingAlertDetails([]) }} alertDetails={trackingAlertDetails} />
       )}
     </div>
   )
